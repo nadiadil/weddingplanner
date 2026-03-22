@@ -61,6 +61,48 @@ function findPerson(id) {
   return state.guests.find(g => g.id === id) || null;
 }
 
+// Normalize: returns array of personIds regardless of old single or new multi format
+function getPersonIds(item) {
+  if (!item) return [];
+  if (Array.isArray(item.personIds)) return item.personIds.filter(Boolean);
+  if (item.personId) return [item.personId];
+  return [];
+}
+
+// Build a compact multi-person select (checkboxes in a scrollable list)
+function buildPersonPicker(inputId, selectedIds = []) {
+  const people = allPeople();
+  return `<div id="${inputId}-picker" style="border:1px solid var(--border-hover);border-radius:var(--radius);background:var(--ivory);max-height:140px;overflow-y:auto;padding:.3rem .5rem">
+    ${people.map(p => `
+      <label style="display:flex;align-items:center;gap:.5rem;padding:.2rem 0;cursor:pointer;font-size:.8rem">
+        <input type="checkbox" value="${p.id}" ${selectedIds.includes(p.id)?'checked':''} style="accent-color:var(--wine)">
+        <div style="width:18px;height:18px;border-radius:50%;background:${roleColor(p.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:600;color:white;flex-shrink:0">${initials((p.firstname||'')+(p.lastname?' '+p.lastname:''))}</div>
+        ${p.firstname} ${p.lastname||''} <span style="color:var(--muted);font-size:.72rem">(${p.role})</span>
+      </label>`).join('')}
+  </div>`;
+}
+
+function getPickerValues(inputId) {
+  const el = document.getElementById(inputId + '-picker');
+  if (!el) return [];
+  return [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+}
+
+// Render a row of person avatars (compact)
+function renderPersonAvatars(personIds, maxShow = 3) {
+  if (!personIds || personIds.length === 0) return '';
+  const shown = personIds.slice(0, maxShow);
+  const extra = personIds.length - maxShow;
+  return '<span style="display:inline-flex;align-items:center;gap:2px">' +
+    shown.map(id => {
+      const p = findPerson(id);
+      if (!p) return '';
+      return `<div title="${p.firstname} ${p.lastname||''}" style="width:18px;height:18px;border-radius:50%;background:${roleColor(p.role)};display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;color:white;border:1.5px solid white">${initials((p.firstname||'')+(p.lastname?' '+p.lastname:''))}</div>`;
+    }).join('') +
+    (extra > 0 ? `<div style="width:18px;height:18px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:.5rem;color:white;border:1.5px solid white">+${extra}</div>` : '') +
+  '</span>';
+}
+
 // ─── FIRESTORE PERSISTENCE ────────────────────
 let _saveTimeout = null;
 
@@ -2025,20 +2067,24 @@ function exportCardPDF(menuId) {
       font-family: 'Jost', sans-serif;
       background: #F9F5EE;
       color: #2C2520;
-      width: 210mm;
       min-height: 297mm;
       display: flex;
       flex-direction: column;
+      align-items: center;
     }
 
     /* ── Card wrapper ── */
     .card {
-      width: 210mm;
-      min-height: 297mm;
+      width: 180mm;
+      min-height: 270mm;
       background: white;
       display: flex;
       flex-direction: column;
       position: relative;
+      margin: 10mm auto;
+      box-shadow: 0 4px 24px rgba(0,0,0,.12);
+      border-radius: 8px;
+      overflow: hidden;
     }
 
     /* ── Header ── */
@@ -2532,11 +2578,7 @@ function renderJourJ() {
                   <div class="task-meta" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.25rem">
                     ${task.heure ? `<span style="font-weight:500;color:var(--charcoal-2)">${task.heure}</span>` : ''}
                     <span class="badge ${statBadge[task.statut]||'badge-gray'}">${task.statut}</span>
-                    ${person ? `
-                      <span style="display:flex;align-items:center;gap:.3rem;font-size:.75rem;color:var(--charcoal-2)">
-                        <div style="width:18px;height:18px;border-radius:50%;background:${roleColor(person.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:600;color:white">${initials((person.firstname||'')+(person.lastname?' '+person.lastname:''))}</div>
-                        ${person.firstname} ${person.lastname||''}
-                      </span>` : ''}
+                    ${taskPersonIds.length > 0 ? renderPersonAvatars(taskPersonIds) : ''}
                     ${task.notes ? `<span style="font-size:.72rem;color:var(--muted);font-style:italic">${task.notes}</span>` : ''}
                   </div>
                 </div>
@@ -2583,12 +2625,9 @@ function renderJourJ() {
               ${JOURJ_STATUTS.map(s => `<option value="${s}">${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
             </select>
           </div>
-          <div class="form-group">
-            <label>Responsable</label>
-            <select id="jourj-person">
-              <option value="">— Personne assignée —</option>
-              ${allPeople().map(p => `<option value="${p.id}">${p.firstname} ${p.lastname||''} (${p.role})</option>`).join('')}
-            </select>
+          <div class="form-group full-width">
+            <label>Responsable(s)</label>
+            ${buildPersonPicker('jourj-person', [])}
           </div>
           <div class="form-group">
             <label>Mini-jeu associé</label>
@@ -2620,7 +2659,14 @@ function openJourJModal(id = null) {
   document.getElementById('jourj-heure').value = t?.heure || '';
   document.getElementById('jourj-category').value = t?.category || 'autre';
   document.getElementById('jourj-statut').value = t?.statut || 'à faire';
-  document.getElementById('jourj-person').value = t?.personId || '';
+  // Rebuild picker with saved values
+  const jourjPersonIds = getPersonIds(t);
+  const jourjPickerWrap = document.querySelector('#jourj-person-picker');
+  if (jourjPickerWrap) {
+    jourjPickerWrap.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.checked = jourjPersonIds.includes(cb.value);
+    });
+  }
   document.getElementById('jourj-jeu').value = t?.jeuId || '';
   document.getElementById('jourj-notes').value = t?.notes || '';
   document.getElementById('jourj-modal').style.display = 'flex';
@@ -2639,7 +2685,7 @@ function saveJourJTask() {
     heure: document.getElementById('jourj-heure').value,
     category: document.getElementById('jourj-category').value,
     statut: document.getElementById('jourj-statut').value,
-    personId: document.getElementById('jourj-person').value || null,
+    personIds: getPickerValues('jourj-person'),
     jeuId: document.getElementById('jourj-jeu').value || null,
     notes: document.getElementById('jourj-notes').value.trim(),
   };
@@ -2699,7 +2745,7 @@ function renderJeux() {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem">
           ${jeux.map(jeu => {
             const jourjLinked = (state.jourjTasks||[]).filter(t => t.jeuId === jeu.id);
-            const responsable = jeu.personId ? findPerson(jeu.personId) : null;
+            const jeuPids = getPersonIds(jeu);
             return `
               <div style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)">
                 <div style="background:var(--charcoal);padding:.9rem 1.2rem;display:flex;align-items:center;gap:.6rem">
@@ -2724,11 +2770,7 @@ function renderJeux() {
                     ${jeu.nbJoueurs ? `<span class="badge badge-gray">👥 ${jeu.nbJoueurs}</span>` : ''}
                     ${jeu.materiel ? `<span class="badge badge-gold">📦 Matériel requis</span>` : ''}
                   </div>
-                  ${responsable ? `
-                    <div style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--charcoal-2);margin-bottom:.6rem">
-                      <div style="width:20px;height:20px;border-radius:50%;background:${roleColor(responsable.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:600;color:white">${initials((responsable.firstname||'')+(responsable.lastname?' '+responsable.lastname:''))}</div>
-                      Animé par ${responsable.firstname} ${responsable.lastname||''}
-                    </div>` : ''}
+                  ${jeuPids.length > 0 ? `<div style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--charcoal-2);margin-bottom:.6rem">Animé par ${renderPersonAvatars(jeuPids)} ${jeuPids.map(id=>{const p=findPerson(id);return p?p.firstname+' '+(p.lastname||''):''}).filter(Boolean).join(', ')}</div>` : ''}
                   <button class="btn btn-sm btn-ghost" style="width:100%;font-size:.72rem;margin-top:.3rem" onclick="addJourJFromJeu('${jeu.id}')">
                     <svg viewBox="0 0 20 20" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><circle cx="10" cy="10" r="8"/><path d="M10 6v4l3 3"/></svg>
                     Ajouter dans Jour J
@@ -2771,12 +2813,9 @@ function renderJeux() {
             <label>Nb de joueurs</label>
             <input type="text" id="jeu-nb" placeholder="Ex: Tous ou 4-6">
           </div>
-          <div class="form-group">
-            <label>Animateur</label>
-            <select id="jeu-person">
-              <option value="">— Non assigné —</option>
-              ${allPeople().map(p => `<option value="${p.id}">${p.firstname} ${p.lastname||''}</option>`).join('')}
-            </select>
+          <div class="form-group full-width">
+            <label>Animateur(s)</label>
+            ${buildPersonPicker('jeu-person', [])}
           </div>
           <div class="form-group full-width">
             <label>Description / Règles</label>
@@ -2817,7 +2856,9 @@ function openJeuModal(id = null) {
   document.getElementById('jeu-category').value = j?.category || 'autre';
   document.getElementById('jeu-duree').value = j?.duree || '';
   document.getElementById('jeu-nb').value = j?.nbJoueurs || '';
-  document.getElementById('jeu-person').value = j?.personId || '';
+  const jeuPersonIds = getPersonIds(j);
+  const jeuPicker = document.querySelector('#jeu-person-picker');
+  if (jeuPicker) jeuPicker.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = jeuPersonIds.includes(cb.value); });
   document.getElementById('jeu-description').value = j?.description || '';
   document.getElementById('jeu-materiel').checked = j?.materiel || false;
   document.getElementById('jeu-materiel-desc').value = j?.materielDesc || '';
@@ -2840,7 +2881,7 @@ function saveJeu() {
     category: document.getElementById('jeu-category').value,
     duree: document.getElementById('jeu-duree').value.trim(),
     nbJoueurs: document.getElementById('jeu-nb').value.trim(),
-    personId: document.getElementById('jeu-person').value || null,
+    personIds: getPickerValues('jeu-person'),
     description: document.getElementById('jeu-description').value.trim(),
     materiel: hasMat,
     materielDesc: hasMat ? document.getElementById('jeu-materiel-desc').value.trim() : '',
@@ -2871,7 +2912,7 @@ function addJourJFromJeu(jeuId) {
     heure: '',
     category: 'animation',
     statut: 'à faire',
-    personId: jeu.personId || null,
+    personIds: getPersonIds(jeu),
     jeuId: jeuId,
     notes: jeu.description || '',
   });
@@ -2932,12 +2973,9 @@ function renderCalendrier() {
               <option value="autre">Autre</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Responsable</label>
-            <select id="rappel-person">
-              <option value="">— Aucun —</option>
-              ${allPeople().map(p => `<option value="${p.id}">${p.firstname} ${p.lastname||''}</option>`).join('')}
-            </select>
+          <div class="form-group full-width">
+            <label>Responsable(s)</label>
+            ${buildPersonPicker('rappel-person', [])}
           </div>
           <div class="form-group full-width">
             <label>Notes</label>
@@ -2956,64 +2994,108 @@ function renderCalendrier() {
 function buildMonthHTML(year, month) {
   const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
   const monthName = monthNames[month];
-  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
-  const startOffset = (firstDay === 0 ? 6 : firstDay - 1); // Mon=0
+  const firstDay = new Date(year, month, 1).getDay();
+  const startOffset = (firstDay === 0 ? 6 : firstDay - 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date();
 
-  // Collect rappels for this month
   const monthRappels = (state.rappels||[]).filter(r => {
-    const d = new Date(r.date);
+    const d = new Date(r.date + 'T00:00:00');
     return d.getFullYear() === year && d.getMonth() === month;
   });
 
   const catColors = { rdv:'var(--wine)', deadline:'#C0392B', paiement:'var(--sage)', essayage:'var(--gold)', réunion:'#4A7C9F', autre:'var(--muted)' };
 
+  // Build day cells
   const cells = [];
-  // Empty cells before first day
   for (let i = 0; i < startOffset; i++) cells.push('<div></div>');
 
   for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dateStr = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
     const isToday = today.getFullYear()===year && today.getMonth()===month && today.getDate()===d;
     const isWedding = month===5 && d===26;
-    const dayRappels = monthRappels.filter(r => r.date === dateStr);
+    // Sort rappels by time
+    const dayRappels = monthRappels
+      .filter(r => r.date === dateStr)
+      .sort((a,b) => (a.heure||'99:99').localeCompare(b.heure||'99:99'));
 
     cells.push(`
       <div onclick="openRappelModal(null,'${dateStr}')" style="
-        min-height:72px;
-        border:1px solid var(--border);
-        border-radius:6px;
-        padding:.3rem .4rem;
-        cursor:pointer;
-        background:${isWedding ? 'rgba(107,45,62,.06)' : 'white'};
-        border-color:${isWedding ? 'var(--wine)' : isToday ? 'var(--gold)' : 'var(--border)'};
+        min-height:72px;border:1px solid var(--border);border-radius:6px;padding:.3rem .4rem;
+        cursor:pointer;background:${isWedding?'rgba(107,45,62,.06)':'white'};
+        border-color:${isWedding?'var(--wine)':isToday?'var(--gold)':'var(--border)'};
         transition:background .15s;
-        position:relative;
       " onmouseover="this.style.background='var(--ivory-2)'" onmouseout="this.style.background='${isWedding?'rgba(107,45,62,.06)':'white'}'">
         <div style="font-size:.72rem;font-weight:${isToday||isWedding?'600':'400'};color:${isWedding?'var(--wine)':isToday?'var(--gold)':'var(--charcoal)'};margin-bottom:.2rem;text-align:right">
-          ${d}${isWedding ? ' 💍' : ''}
+          ${d}${isWedding?' 💍':''}
         </div>
         ${dayRappels.map(r => {
-          const person = r.personId ? findPerson(r.personId) : null;
-          return `<div onclick="event.stopPropagation();openRappelModal('${r.id}')" style="
-            background:${catColors[r.category]||'var(--muted)'};
-            color:white;
-            border-radius:3px;
-            padding:.1rem .3rem;
-            font-size:.62rem;
-            margin-bottom:.15rem;
-            white-space:nowrap;
-            overflow:hidden;
-            text-overflow:ellipsis;
-            cursor:pointer;
-          " title="${r.name}${person?' — '+person.firstname:''}">
-            ${r.heure?r.heure.slice(0,5)+' ':''}${r.name}
-          </div>`;
+          const rPids = getPersonIds(r);
+          const timeLabel = r.heure ? r.heure.slice(0,5) + ' ' : '';
+          return '<div onclick="event.stopPropagation();openRappelModal(\'' + r.id + '\')" style="background:' + (catColors[r.category]||'var(--muted)') + ';color:white;border-radius:3px;padding:.1rem .3rem;font-size:.62rem;margin-bottom:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;display:flex;align-items:center;gap:.2rem" title="' + r.name + (rPids.length>0?' — '+rPids.map(id=>{const p=findPerson(id);return p?p.firstname:''}).filter(Boolean).join(', '):'') + '">'
+            + (timeLabel ? '<span style="opacity:.8;flex-shrink:0">' + timeLabel + '</span>' : '')
+            + '<span style="overflow:hidden;text-overflow:ellipsis">' + r.name + '</span>'
+            + (rPids.length > 0 ? '<span style="margin-left:auto;flex-shrink:0;opacity:.85">' + rPids.map(id=>{const p=findPerson(id);return p?'<div style="width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.3);display:inline-flex;align-items:center;justify-content:center;font-size:.4rem;font-weight:700">' + (p.firstname||'?')[0] + '</div>':''}).filter(Boolean).join('') + '</span>' : '')
+            + '</div>';
+        }).join('')}
+      </div>`);
+  }
+
+  // Agenda view: hour timeline for this month
+  const allHourRappels = monthRappels.filter(r => r.heure).sort((a,b) => {
+    const da = a.date + 'T' + a.heure;
+    const db = b.date + 'T' + b.heure;
+    return da.localeCompare(db);
+  });
+  const noHourRappels = monthRappels.filter(r => !r.heure);
+
+  const hourBlocks = {};
+  allHourRappels.forEach(r => {
+    const hour = r.heure.slice(0,2) + ':00';
+    if (!hourBlocks[hour]) hourBlocks[hour] = [];
+    hourBlocks[hour].push(r);
+  });
+
+  const agendaHTML = Object.keys(hourBlocks).sort().map(hour => {
+    const amPm = parseInt(hour) < 12 ? 'Matin' : parseInt(hour) < 18 ? 'Après-midi' : 'Soirée';
+    return `<div style="display:flex;gap:.8rem;align-items:flex-start;padding:.5rem 0;border-bottom:1px solid var(--border)">
+      <div style="min-width:70px;text-align:right;flex-shrink:0">
+        <div style="font-size:.78rem;font-weight:500;color:var(--charcoal-2)">${hour}</div>
+        <div style="font-size:.62rem;color:var(--muted)">${amPm}</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:.3rem">
+        ${hourBlocks[hour].map(r => {
+          const rPids = getPersonIds(r);
+          return '<div onclick="openRappelModal(\'' + r.id + '\')" style="background:white;border:1px solid var(--border);border-left:3px solid ' + (catColors[r.category]||'var(--muted)') + ';border-radius:0 6px 6px 0;padding:.4rem .7rem;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow=\'var(--shadow)\'" onmouseout="this.style.boxShadow=\'none\'">'
+            + '<div style="display:flex;align-items:center;gap:.5rem">'
+            + '<span style="font-size:.82rem;font-weight:500;color:var(--charcoal);flex:1">' + r.heure.slice(0,5) + ' — ' + r.name + '</span>'
+            + '<span class="badge ' + (r.category==='deadline'?'badge-red':r.category==='paiement'?'badge-sage':'badge-gray') + '" style="font-size:.65rem">' + r.category + '</span>'
+            + (rPids.length>0 ? renderPersonAvatars(rPids) : '')
+            + '</div>'
+            + (r.notes ? '<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">' + r.notes + '</div>' : '')
+            + '</div>';
         }).join('')}
       </div>
-    `);
-  }
+    </div>`;
+  }).join('');
+
+  const noHourHTML = noHourRappels.length > 0 ? `
+    <div style="display:flex;gap:.8rem;align-items:flex-start;padding:.5rem 0;border-bottom:1px solid var(--border)">
+      <div style="min-width:70px;text-align:right;flex-shrink:0">
+        <div style="font-size:.78rem;color:var(--muted)">—</div>
+        <div style="font-size:.62rem;color:var(--muted)">Sans heure</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:.3rem">
+        ${noHourRappels.map(r => {
+          const rPids = getPersonIds(r);
+          return '<div onclick="openRappelModal(\'' + r.id + '\')" style="background:white;border:1px solid var(--border);border-left:3px solid ' + (catColors[r.category]||'var(--muted)') + ';border-radius:0 6px 6px 0;padding:.35rem .7rem;cursor:pointer;display:flex;align-items:center;gap:.5rem" onmouseover="this.style.boxShadow=\'var(--shadow)\'" onmouseout="this.style.boxShadow=\'none\'">'
+            + '<span style="font-size:.8rem;flex:1;color:var(--charcoal)">' + r.name + '</span>'
+            + '<span class="badge badge-gray" style="font-size:.65rem">' + r.category + '</span>'
+            + (rPids.length>0 ? renderPersonAvatars(rPids) : '')
+            + '</div>';
+        }).join('')}
+      </div>
+    </div>` : '';
 
   return `
     <div style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);margin-bottom:.5rem">
@@ -3021,16 +3103,28 @@ function buildMonthHTML(year, month) {
         <div style="font-family:var(--font-display);font-size:1.3rem;font-weight:300;color:white">${monthName} ${year}</div>
         <div style="font-size:.72rem;color:var(--gold-light);letter-spacing:.1em">${monthRappels.length} rappel${monthRappels.length!==1?'s':''}</div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;padding:.5rem;background:var(--border)">
+
+      <!-- Grid calendar -->
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;padding:.6rem;background:var(--ivory-2)">
         ${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(d=>`<div style="text-align:center;font-size:.65rem;font-weight:500;letter-spacing:.06em;color:var(--muted);padding:.3rem 0">${d}</div>`).join('')}
         ${cells.join('')}
       </div>
-      <div style="padding:.5rem 1rem;border-top:1px solid var(--border);display:flex;gap:.4rem;flex-wrap:wrap">
-        ${Object.entries(catColors).map(([cat,col])=>`<span style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--muted)"><span style="width:8px;height:8px;border-radius:2px;background:${col};display:inline-block"></span>${cat}</span>`).join('')}
+
+      <!-- Agenda: hour timeline -->
+      ${monthRappels.length > 0 ? `
+        <div style="border-top:2px solid var(--border);padding:.8rem 1.2rem">
+          <div style="font-size:.72rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.6rem">Agenda chronologique</div>
+          ${agendaHTML}${noHourHTML}
+        </div>` : ''}
+
+      <!-- Legend -->
+      <div style="padding:.4rem .8rem;border-top:1px solid var(--border);display:flex;gap:.5rem;flex-wrap:wrap;background:var(--ivory)">
+        ${Object.entries(catColors).map(([cat,col])=>`<span style="display:flex;align-items:center;gap:.25rem;font-size:.65rem;color:var(--muted)"><span style="width:8px;height:8px;border-radius:2px;background:${col};display:inline-block"></span>${cat}</span>`).join('')}
       </div>
     </div>
   `;
 }
+
 
 let _editingRappelId = null;
 function openRappelModal(id = null, defaultDate = null) {
@@ -3041,7 +3135,9 @@ function openRappelModal(id = null, defaultDate = null) {
   document.getElementById('rappel-date').value = r?.date || defaultDate || '';
   document.getElementById('rappel-heure').value = r?.heure || '';
   document.getElementById('rappel-category').value = r?.category || 'rdv';
-  document.getElementById('rappel-person').value = r?.personId || '';
+  const rappelPersonIds = getPersonIds(r);
+  const rappelPicker = document.querySelector('#rappel-person-picker');
+  if (rappelPicker) rappelPicker.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = rappelPersonIds.includes(cb.value); });
   document.getElementById('rappel-notes').value = r?.notes || '';
   document.getElementById('rappel-modal').style.display = 'flex';
   document.getElementById('rappel-overlay').style.display = 'block';
@@ -3060,7 +3156,7 @@ function saveRappel() {
     name, date,
     heure: document.getElementById('rappel-heure').value,
     category: document.getElementById('rappel-category').value,
-    personId: document.getElementById('rappel-person').value || null,
+    personIds: getPickerValues('rappel-person'),
     notes: document.getElementById('rappel-notes').value.trim(),
   };
   if (_editingRappelId) {
@@ -3093,16 +3189,16 @@ function renderOrganisation() {
   }
 
   (state.jourjTasks||[]).forEach(t => {
-    if (t.personId) addItem(t.personId, { type:'jourj', label: t.name, heure: t.heure, statut: t.statut, category: t.category, jeuId: t.jeuId });
+    getPersonIds(t).forEach(pid => addItem(pid, { type:'jourj', label: t.name, heure: t.heure, statut: t.statut, category: t.category, jeuId: t.jeuId }));
   });
   (state.rappels||[]).forEach(r => {
-    if (r.personId) addItem(r.personId, { type:'rappels', label: r.name, date: r.date, heure: r.heure, category: r.category });
+    getPersonIds(r).forEach(pid => addItem(pid, { type:'rappels', label: r.name, date: r.date, heure: r.heure, category: r.category }));
   });
   (state.tasks||[]).forEach(t => {
-    if (t.personId) addItem(t.personId, { type:'checklist', label: t.name, due: t.due, priority: t.priority, done: t.done });
+    getPersonIds(t).forEach(pid => addItem(pid, { type:'checklist', label: t.name, due: t.due, priority: t.priority, done: t.done }));
   });
   (state.jeux||[]).forEach(j => {
-    if (j.personId) addItem(j.personId, { type:'jeux', label: j.name, emoji: j.emoji, duree: j.duree });
+    getPersonIds(j).forEach(pid => addItem(pid, { type:'jeux', label: j.name, emoji: j.emoji, duree: j.duree }));
   });
 
   const peopleIds = Object.keys(byPerson);
@@ -3192,10 +3288,10 @@ function exportOrgaPDF(personId) {
   const fullName = `${person.firstname} ${person.lastname||''}`.trim();
 
   // Gather all items
-  const jourjItems = (state.jourjTasks||[]).filter(t => t.personId === personId);
-  const rappelItems = (state.rappels||[]).filter(r => r.personId === personId).sort((a,b)=>a.date.localeCompare(b.date));
-  const checkItems = (state.tasks||[]).filter(t => t.personId === personId);
-  const jeuxItems = (state.jeux||[]).filter(j => j.personId === personId);
+  const jourjItems = (state.jourjTasks||[]).filter(t => getPersonIds(t).includes(personId));
+  const rappelItems = (state.rappels||[]).filter(r => getPersonIds(r).includes(personId)).sort((a,b)=>a.date.localeCompare(b.date));
+  const checkItems = (state.tasks||[]).filter(t => getPersonIds(t).includes(personId));
+  const jeuxItems = (state.jeux||[]).filter(j => getPersonIds(j).includes(personId));
 
   const win = window.open('', '_blank');
 
