@@ -3356,7 +3356,7 @@ function renderOrganisation() {
 
   function addItem(personId, item) {
     if (!personId) return;
-    if (!byPerson[personId]) byPerson[personId] = { jourj: [], rappels: [], checklist: [], jeux: [] };
+    if (!byPerson[personId]) byPerson[personId] = { jourj: [], rappels: [], checklist: [] };
     byPerson[personId][item.type].push(item);
   }
 
@@ -3369,9 +3369,7 @@ function renderOrganisation() {
   (state.tasks||[]).forEach(t => {
     getPersonIds(t).forEach(pid => addItem(pid, { type:'checklist', label: t.name, due: t.due, priority: t.priority, done: t.done }));
   });
-  (state.jeux||[]).forEach(j => {
-    getPersonIds(j).forEach(pid => addItem(pid, { type:'jeux', label: j.name, emoji: j.emoji, duree: j.duree }));
-  });
+  // Mini-jeux exclus : déjà représentés via les tâches Jour J liées
 
   const peopleIds = Object.keys(byPerson);
 
@@ -3395,7 +3393,7 @@ function renderOrganisation() {
             const person = findPerson(pid);
             if (!person) return '';
             const items = byPerson[pid];
-            const totalItems = items.jourj.length + items.rappels.length + items.checklist.length + items.jeux.length;
+            const totalItems = items.jourj.length + items.rappels.length + items.checklist.length;
             const fullName = `${person.firstname} ${person.lastname||''}`.trim();
 
             return `<div style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column">
@@ -3438,13 +3436,7 @@ function renderOrganisation() {
                     <span style="flex:1;${i.done?'text-decoration:line-through':''}">${i.label}</span>
                     ${i.due?`<span style="font-size:.7rem;color:var(--muted)">${formatDate(i.due)}</span>`:''}
                   </div>`).join('')}` : ''}
-                ${items.jeux.length > 0 ? `
-                  <div style="padding:.4rem .8rem .2rem;font-size:.65rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);background:var(--ivory-2);border-bottom:1px solid var(--border)">🎮 Jeux animés</div>
-                  ${items.jeux.map(i => `<div style="padding:.4rem .8rem;border-bottom:1px solid var(--border);font-size:.8rem;display:flex;align-items:center;gap:.5rem">
-                    <span style="font-size:1rem">${i.emoji||'🎮'}</span>
-                    <span style="flex:1">${i.label}</span>
-                    ${i.duree?`<span style="font-size:.7rem;color:var(--muted)">${i.duree}</span>`:''}
-                  </div>`).join('')}` : ''}
+
               </div>
             </div>`;
           }).join('')}
@@ -3463,7 +3455,7 @@ function exportOrgaPDF(personId) {
   const jourjItems = (state.jourjTasks||[]).filter(t => getPersonIds(t).includes(personId));
   const rappelItems = (state.rappels||[]).filter(r => getPersonIds(r).includes(personId)).sort((a,b)=>a.date.localeCompare(b.date));
   const checkItems = (state.tasks||[]).filter(t => getPersonIds(t).includes(personId));
-  const jeuxItems = (state.jeux||[]).filter(j => getPersonIds(j).includes(personId));
+  const jeuxItems = []; // Mini-jeux exclus (déjà dans Jour J)
 
   const win = window.open('', '_blank');
 
