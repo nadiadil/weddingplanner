@@ -69,26 +69,107 @@ function getPersonIds(item) {
   return [];
 }
 
-// Build a compact multi-person select (checkboxes in a scrollable list)
+// Roles eligible for assignment (exclude simple guests and children)
+const ASSIGNABLE_ROLES = ['marié','mariée','témoin-marié','témoin-mariée','demoiselle-honneur','garçon-honneur','famille-marié','famille-mariée'];
+
+function assignablePeople() {
+  return allPeople().filter(p => ASSIGNABLE_ROLES.includes(p.role));
+}
+
+// Build a clean tag-based multi-person picker
 function buildPersonPicker(inputId, selectedIds = []) {
-  const people = allPeople();
-  return `<div id="${inputId}-picker" style="border:1px solid var(--border-hover);border-radius:var(--radius);background:var(--ivory);max-height:140px;overflow-y:auto;padding:.3rem .5rem">
-    ${people.map(p => `
-      <label style="display:flex;align-items:center;gap:.5rem;padding:.2rem 0;cursor:pointer;font-size:.8rem">
-        <input type="checkbox" value="${p.id}" ${selectedIds.includes(p.id)?'checked':''} style="accent-color:var(--wine)">
-        <div style="width:18px;height:18px;border-radius:50%;background:${roleColor(p.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:600;color:white;flex-shrink:0">${initials((p.firstname||'')+(p.lastname?' '+p.lastname:''))}</div>
-        ${p.firstname} ${p.lastname||''} <span style="color:var(--muted);font-size:.72rem">(${p.role})</span>
-      </label>`).join('')}
+  const people = assignablePeople();
+  if (people.length === 0) return '<div style="font-size:.8rem;color:var(--muted);font-style:italic">Aucune personne assignable (ajoutez des témoins, famille...)</div>';
+  const roleOrder = ['marié','mariée','témoin-marié','témoin-mariée','demoiselle-honneur','garçon-honneur','famille-marié','famille-mariée'];
+  const grouped = {};
+  roleOrder.forEach(r => grouped[r] = []);
+  people.forEach(p => { if (grouped[p.role]) grouped[p.role].push(p); });
+
+  const roleLabelMap = {
+    'marié':'Mariés','mariée':'Mariés',
+    'témoin-marié':'Témoins','témoin-mariée':'Témoins',
+    'demoiselle-honneur':"Cortège",'garçon-honneur':"Cortège",
+    'famille-marié':'Famille','famille-mariée':'Famille',
+  };
+
+  // Deduplicate group labels
+  const seen = new Set();
+  const groups = [];
+  roleOrder.forEach(r => {
+    if (grouped[r].length === 0) return;
+    const label = roleLabelMap[r];
+    if (!seen.has(label)) { seen.add(label); groups.push({ label, roles: [r] }); }
+    else { groups.find(g => g.label === label).roles.push(r); }
+  });
+
+  return `<div id="${inputId}-picker" style="border:1px solid var(--border-hover);border-radius:var(--radius);background:white;overflow:hidden">
+    ${groups.map(group => {
+      const groupPeople = group.roles.flatMap(r => grouped[r]);
+      return `<div style="border-bottom:1px solid var(--border)">
+        <div style="font-size:.65rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:.3rem .7rem;background:var(--ivory-2)">${group.label}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem;padding:.5rem .7rem">
+          ${groupPeople.map(p => {
+            const isSelected = selectedIds.includes(p.id);
+            const name = (p.firstname||'') + (p.lastname ? ' ' + p.lastname : '');
+            return `<button type="button"
+              id="${inputId}-btn-${p.id}"
+              onclick="togglePersonPick('${inputId}','${p.id}',this)"
+              style="display:flex;align-items:center;gap:.35rem;padding:.25rem .6rem .25rem .35rem;border-radius:20px;border:1.5px solid ${isSelected?'var(--wine)':'var(--border-hover)'};background:${isSelected?'var(--wine-pale)':'white'};cursor:pointer;font-size:.76rem;font-family:var(--font-body);color:${isSelected?'var(--wine)':'var(--charcoal-2)'};transition:all .15s">
+              <div style="width:20px;height:20px;border-radius:50%;background:${roleColor(p.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:600;color:white;flex-shrink:0">${initials(name)}</div>
+              ${name}
+            </button>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('')}
   </div>`;
+}
+
+function togglePersonPick(inputId, personId, btn) {
+  const isActive = btn.style.borderColor.includes('wine') || btn.style.background.includes('wine');
+  if (isActive) {
+    btn.style.borderColor = 'var(--border-hover)';
+    btn.style.background = 'white';
+    btn.style.color = 'var(--charcoal-2)';
+  } else {
+    btn.style.borderColor = 'var(--wine)';
+    btn.style.background = 'var(--wine-pale)';
+    btn.style.color = 'var(--wine)';
+  }
 }
 
 function getPickerValues(inputId) {
   const el = document.getElementById(inputId + '-picker');
   if (!el) return [];
+  // New button-based picker: find active buttons
+  const buttons = el.querySelectorAll('button[id^="' + inputId + '-btn-"]');
+  if (buttons.length > 0) {
+    return [...buttons]
+      .filter(btn => btn.style.background.includes('wine') || btn.style.borderColor.includes('wine'))
+      .map(btn => btn.id.replace(inputId + '-btn-', ''));
+  }
+  // Fallback: checkbox-based
   return [...el.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
 }
 
 // Render a row of person avatars (compact)
+function initPickerSelection(inputId, selectedIds) {
+  const el = document.getElementById(inputId + '-picker');
+  if (!el) return;
+  el.querySelectorAll('button[id^="' + inputId + '-btn-"]').forEach(btn => {
+    const pid = btn.id.replace(inputId + '-btn-', '');
+    if (selectedIds.includes(pid)) {
+      btn.style.borderColor = 'var(--wine)';
+      btn.style.background = 'var(--wine-pale)';
+      btn.style.color = 'var(--wine)';
+    } else {
+      btn.style.borderColor = 'var(--border-hover)';
+      btn.style.background = 'white';
+      btn.style.color = 'var(--charcoal-2)';
+    }
+  });
+}
+
 function renderPersonAvatars(personIds, maxShow = 3) {
   if (!personIds || personIds.length === 0) return '';
   const shown = personIds.slice(0, maxShow);
@@ -2659,14 +2740,9 @@ function openJourJModal(id = null) {
   document.getElementById('jourj-heure').value = t?.heure || '';
   document.getElementById('jourj-category').value = t?.category || 'autre';
   document.getElementById('jourj-statut').value = t?.statut || 'à faire';
-  // Rebuild picker with saved values
+  // Init picker buttons
   const jourjPersonIds = getPersonIds(t);
-  const jourjPickerWrap = document.querySelector('#jourj-person-picker');
-  if (jourjPickerWrap) {
-    jourjPickerWrap.querySelectorAll('input[type=checkbox]').forEach(cb => {
-      cb.checked = jourjPersonIds.includes(cb.value);
-    });
-  }
+  setTimeout(() => initPickerSelection('jourj-person', jourjPersonIds), 0);
   document.getElementById('jourj-jeu').value = t?.jeuId || '';
   document.getElementById('jourj-notes').value = t?.notes || '';
   document.getElementById('jourj-modal').style.display = 'flex';
@@ -2857,8 +2933,7 @@ function openJeuModal(id = null) {
   document.getElementById('jeu-duree').value = j?.duree || '';
   document.getElementById('jeu-nb').value = j?.nbJoueurs || '';
   const jeuPersonIds = getPersonIds(j);
-  const jeuPicker = document.querySelector('#jeu-person-picker');
-  if (jeuPicker) jeuPicker.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = jeuPersonIds.includes(cb.value); });
+  setTimeout(() => initPickerSelection('jeu-person', jeuPersonIds), 0);
   document.getElementById('jeu-description').value = j?.description || '';
   document.getElementById('jeu-materiel').checked = j?.materiel || false;
   document.getElementById('jeu-materiel-desc').value = j?.materielDesc || '';
@@ -2923,6 +2998,8 @@ function addJourJFromJeu(jeuId) {
 
 // ─── CALENDRIER ────────────────────────────────
 
+let calSelectedDate = null; // 'YYYY-MM-DD'
+
 function renderCalendrier() {
   const pg = document.getElementById('page-calendrier');
   pg.innerHTML = `
@@ -2937,18 +3014,20 @@ function renderCalendrier() {
     </div>
     <div class="page-body" style="padding-top:1.5rem">
       ${buildMonthHTML(2026, 4)}
-      <div style="height:1.5rem"></div>
+      <div style="height:1rem"></div>
       ${buildMonthHTML(2026, 5)}
+      <!-- Day agenda panel -->
+      <div id="cal-day-panel" style="display:none;margin-top:1.5rem;background:white;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)"></div>
     </div>
 
     <!-- Rappel Modal -->
     <div id="rappel-overlay" onclick="closeRappelModal()" style="position:fixed;inset:0;background:rgba(44,37,32,.5);z-index:200;display:none;backdrop-filter:blur(2px)"></div>
-    <div id="rappel-modal" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(460px,94vw);background:white;border-radius:var(--radius-lg);z-index:210;box-shadow:var(--shadow-lg);display:none;flex-direction:column">
+    <div id="rappel-modal" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(480px,94vw);background:white;border-radius:var(--radius-lg);z-index:210;box-shadow:var(--shadow-lg);display:none;flex-direction:column;max-height:90vh">
       <div class="modal-header">
         <h3 id="rappel-modal-title" style="font-family:var(--font-display);font-size:1.4rem;font-weight:400">Nouveau rappel</h3>
         <button class="modal-close" onclick="closeRappelModal()">×</button>
       </div>
-      <div class="modal-body" style="padding:1.5rem">
+      <div class="modal-body" style="padding:1.5rem;overflow-y:auto">
         <div class="form-grid">
           <div class="form-group full-width">
             <label>Rappel *</label>
@@ -2995,7 +3074,7 @@ function buildMonthHTML(year, month) {
   const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
   const monthName = monthNames[month];
   const firstDay = new Date(year, month, 1).getDay();
-  const startOffset = (firstDay === 0 ? 6 : firstDay - 1);
+  const startOffset = firstDay === 0 ? 6 : firstDay - 1;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date();
 
@@ -3006,7 +3085,6 @@ function buildMonthHTML(year, month) {
 
   const catColors = { rdv:'var(--wine)', deadline:'#C0392B', paiement:'var(--sage)', essayage:'var(--gold)', réunion:'#4A7C9F', autre:'var(--muted)' };
 
-  // Build day cells
   const cells = [];
   for (let i = 0; i < startOffset; i++) cells.push('<div></div>');
 
@@ -3014,165 +3092,156 @@ function buildMonthHTML(year, month) {
     const dateStr = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
     const isToday = today.getFullYear()===year && today.getMonth()===month && today.getDate()===d;
     const isWedding = month===5 && d===26;
-    // Sort rappels by time
+    const isSelected = calSelectedDate === dateStr;
     const dayRappels = monthRappels
       .filter(r => r.date === dateStr)
       .sort((a,b) => (a.heure||'99:99').localeCompare(b.heure||'99:99'));
 
     cells.push(`
-      <div onclick="openRappelModal(null,'${dateStr}')" style="
-        min-height:72px;border:1px solid var(--border);border-radius:6px;padding:.3rem .4rem;
-        cursor:pointer;background:${isWedding?'rgba(107,45,62,.06)':'white'};
-        border-color:${isWedding?'var(--wine)':isToday?'var(--gold)':'var(--border)'};
-        transition:background .15s;
-      " onmouseover="this.style.background='var(--ivory-2)'" onmouseout="this.style.background='${isWedding?'rgba(107,45,62,.06)':'white'}'">
-        <div style="font-size:.72rem;font-weight:${isToday||isWedding?'600':'400'};color:${isWedding?'var(--wine)':isToday?'var(--gold)':'var(--charcoal)'};margin-bottom:.2rem;text-align:right">
+      <div onclick="selectCalDay('${dateStr}')" style="
+        min-height:68px;border:${isSelected?'2px solid var(--wine)':'1px solid var(--border)'};
+        border-radius:6px;padding:.3rem .35rem;cursor:pointer;
+        background:${isSelected?'var(--wine-pale)':isWedding?'rgba(107,45,62,.05)':'white'};
+        transition:all .15s;box-shadow:${isSelected?'0 2px 8px rgba(107,45,62,.15)':'none'};
+      " onmouseover="if('${dateStr}'!==calSelectedDate)this.style.background='var(--ivory-2)'"
+         onmouseout="if('${dateStr}'!==calSelectedDate)this.style.background='${isWedding?'rgba(107,45,62,.05)':'white'}'">
+        <div style="font-size:.72rem;font-weight:${isToday||isWedding||isSelected?'600':'400'};color:${isSelected?'var(--wine)':isWedding?'var(--wine)':isToday?'var(--gold)':'var(--charcoal)'};margin-bottom:.2rem;text-align:right">
           ${d}${isWedding?' 💍':''}
         </div>
         ${dayRappels.map(r => {
           const rPids = getPersonIds(r);
-          const timeLabel = r.heure ? r.heure.slice(0,5) + ' ' : '';
-          return '<div onclick="event.stopPropagation();openRappelModal(\'' + r.id + '\')" style="background:' + (catColors[r.category]||'var(--muted)') + ';color:white;border-radius:3px;padding:.1rem .3rem;font-size:.62rem;margin-bottom:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;display:flex;align-items:center;gap:.2rem" title="' + r.name + (rPids.length>0?' — '+rPids.map(id=>{const p=findPerson(id);return p?p.firstname:''}).filter(Boolean).join(', '):'') + '">'
-            + (timeLabel ? '<span style="opacity:.8;flex-shrink:0">' + timeLabel + '</span>' : '')
-            + '<span style="overflow:hidden;text-overflow:ellipsis">' + r.name + '</span>'
-            + (rPids.length > 0 ? '<span style="margin-left:auto;flex-shrink:0;opacity:.85">' + rPids.map(id=>{const p=findPerson(id);return p?'<div style="width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.3);display:inline-flex;align-items:center;justify-content:center;font-size:.4rem;font-weight:700">' + (p.firstname||'?')[0] + '</div>':''}).filter(Boolean).join('') + '</span>' : '')
+          return '<div style="background:' + (catColors[r.category]||'var(--muted)') + ';color:white;border-radius:3px;padding:.1rem .3rem;font-size:.6rem;margin-bottom:.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + r.name + '">'
+            + (r.heure ? r.heure.slice(0,5) + ' ' : '') + r.name
             + '</div>';
         }).join('')}
       </div>`);
   }
 
-  // Agenda view: hour timeline for this month
-  const allHourRappels = monthRappels.filter(r => r.heure).sort((a,b) => {
-    const da = a.date + 'T' + a.heure;
-    const db = b.date + 'T' + b.heure;
-    return da.localeCompare(db);
-  });
-  const noHourRappels = monthRappels.filter(r => !r.heure);
-
-  const hourBlocks = {};
-  allHourRappels.forEach(r => {
-    const hour = r.heure.slice(0,2) + ':00';
-    if (!hourBlocks[hour]) hourBlocks[hour] = [];
-    hourBlocks[hour].push(r);
-  });
-
-  const agendaHTML = Object.keys(hourBlocks).sort().map(hour => {
-    const amPm = parseInt(hour) < 12 ? 'Matin' : parseInt(hour) < 18 ? 'Après-midi' : 'Soirée';
-    return `<div style="display:flex;gap:.8rem;align-items:flex-start;padding:.5rem 0;border-bottom:1px solid var(--border)">
-      <div style="min-width:70px;text-align:right;flex-shrink:0">
-        <div style="font-size:.78rem;font-weight:500;color:var(--charcoal-2)">${hour}</div>
-        <div style="font-size:.62rem;color:var(--muted)">${amPm}</div>
-      </div>
-      <div style="flex:1;display:flex;flex-direction:column;gap:.3rem">
-        ${hourBlocks[hour].map(r => {
-          const rPids = getPersonIds(r);
-          return '<div onclick="openRappelModal(\'' + r.id + '\')" style="background:white;border:1px solid var(--border);border-left:3px solid ' + (catColors[r.category]||'var(--muted)') + ';border-radius:0 6px 6px 0;padding:.4rem .7rem;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow=\'var(--shadow)\'" onmouseout="this.style.boxShadow=\'none\'">'
-            + '<div style="display:flex;align-items:center;gap:.5rem">'
-            + '<span style="font-size:.82rem;font-weight:500;color:var(--charcoal);flex:1">' + r.heure.slice(0,5) + ' — ' + r.name + '</span>'
-            + '<span class="badge ' + (r.category==='deadline'?'badge-red':r.category==='paiement'?'badge-sage':'badge-gray') + '" style="font-size:.65rem">' + r.category + '</span>'
-            + (rPids.length>0 ? renderPersonAvatars(rPids) : '')
-            + '</div>'
-            + (r.notes ? '<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">' + r.notes + '</div>' : '')
-            + '</div>';
-        }).join('')}
-      </div>
-    </div>`;
-  }).join('');
-
-  const noHourHTML = noHourRappels.length > 0 ? `
-    <div style="display:flex;gap:.8rem;align-items:flex-start;padding:.5rem 0;border-bottom:1px solid var(--border)">
-      <div style="min-width:70px;text-align:right;flex-shrink:0">
-        <div style="font-size:.78rem;color:var(--muted)">—</div>
-        <div style="font-size:.62rem;color:var(--muted)">Sans heure</div>
-      </div>
-      <div style="flex:1;display:flex;flex-direction:column;gap:.3rem">
-        ${noHourRappels.map(r => {
-          const rPids = getPersonIds(r);
-          return '<div onclick="openRappelModal(\'' + r.id + '\')" style="background:white;border:1px solid var(--border);border-left:3px solid ' + (catColors[r.category]||'var(--muted)') + ';border-radius:0 6px 6px 0;padding:.35rem .7rem;cursor:pointer;display:flex;align-items:center;gap:.5rem" onmouseover="this.style.boxShadow=\'var(--shadow)\'" onmouseout="this.style.boxShadow=\'none\'">'
-            + '<span style="font-size:.8rem;flex:1;color:var(--charcoal)">' + r.name + '</span>'
-            + '<span class="badge badge-gray" style="font-size:.65rem">' + r.category + '</span>'
-            + (rPids.length>0 ? renderPersonAvatars(rPids) : '')
-            + '</div>';
-        }).join('')}
-      </div>
-    </div>` : '';
-
   return `
-    <div style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);margin-bottom:.5rem">
+    <div style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)">
       <div style="background:var(--charcoal);padding:.9rem 1.5rem;display:flex;align-items:center;justify-content:space-between">
         <div style="font-family:var(--font-display);font-size:1.3rem;font-weight:300;color:white">${monthName} ${year}</div>
         <div style="font-size:.72rem;color:var(--gold-light);letter-spacing:.1em">${monthRappels.length} rappel${monthRappels.length!==1?'s':''}</div>
       </div>
-
-      <!-- Grid calendar -->
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;padding:.6rem;background:var(--ivory-2)">
-        ${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(d=>`<div style="text-align:center;font-size:.65rem;font-weight:500;letter-spacing:.06em;color:var(--muted);padding:.3rem 0">${d}</div>`).join('')}
+        ${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(d=>`<div style="text-align:center;font-size:.65rem;font-weight:500;letter-spacing:.06em;color:var(--muted);padding:.25rem 0">${d}</div>`).join('')}
         ${cells.join('')}
       </div>
+      <div style="padding:.35rem .8rem;border-top:1px solid var(--border);display:flex;gap:.5rem;flex-wrap:wrap;background:var(--ivory)">
+        ${Object.entries(catColors).map(([cat,col])=>`<span style="display:flex;align-items:center;gap:.2rem;font-size:.62rem;color:var(--muted)"><span style="width:7px;height:7px;border-radius:2px;background:${col};display:inline-block"></span>${cat}</span>`).join('')}
+        <span style="font-size:.62rem;color:var(--muted);margin-left:auto">Cliquer sur une case pour voir l'agenda</span>
+      </div>
+    </div>`;
+}
 
-      <!-- Agenda: hour timeline -->
-      ${monthRappels.length > 0 ? `
-        <div style="border-top:2px solid var(--border);padding:.8rem 1.2rem">
-          <div style="font-size:.72rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.6rem">Agenda chronologique</div>
-          ${agendaHTML}${noHourHTML}
-        </div>` : ''}
+function selectCalDay(dateStr) {
+  calSelectedDate = calSelectedDate === dateStr ? null : dateStr;
+  // Re-render both months to update selection highlight
+  const pg = document.getElementById('page-calendrier');
+  const bodyDiv = pg.querySelector('.page-body');
+  if (!bodyDiv) { renderCalendrier(); return; }
 
-      <!-- Legend -->
-      <div style="padding:.4rem .8rem;border-top:1px solid var(--border);display:flex;gap:.5rem;flex-wrap:wrap;background:var(--ivory)">
-        ${Object.entries(catColors).map(([cat,col])=>`<span style="display:flex;align-items:center;gap:.25rem;font-size:.65rem;color:var(--muted)"><span style="width:8px;height:8px;border-radius:2px;background:${col};display:inline-block"></span>${cat}</span>`).join('')}
+  // Update grid cells highlight without full re-render
+  bodyDiv.querySelectorAll('[onclick^="selectCalDay"]').forEach(cell => {
+    const cellDate = cell.getAttribute('onclick').match(/'([^']+)'/)?.[1];
+    if (!cellDate) return;
+    const isWedding = cellDate.endsWith('-06-26');
+    const isSelected = calSelectedDate === cellDate;
+    cell.style.border = isSelected ? '2px solid var(--wine)' : '1px solid var(--border)';
+    cell.style.background = isSelected ? 'var(--wine-pale)' : isWedding ? 'rgba(107,45,62,.05)' : 'white';
+    cell.style.boxShadow = isSelected ? '0 2px 8px rgba(107,45,62,.15)' : 'none';
+  });
+
+  renderDayPanel();
+}
+
+function renderDayPanel() {
+  const panel = document.getElementById('cal-day-panel');
+  if (!panel) return;
+
+  if (!calSelectedDate) { panel.style.display = 'none'; return; }
+
+  const catColors = { rdv:'var(--wine)', deadline:'#C0392B', paiement:'var(--sage)', essayage:'var(--gold)', réunion:'#4A7C9F', autre:'var(--muted)' };
+  const dayRappels = (state.rappels||[])
+    .filter(r => r.date === calSelectedDate)
+    .sort((a,b) => (a.heure||'99:99').localeCompare(b.heure||'99:99'));
+
+  // Parse date for display
+  const [y,m,d] = calSelectedDate.split('-').map(Number);
+  const dateObj = new Date(y, m-1, d);
+  const dayNames = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+  const monthNames = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  const dateLabel = dayNames[dateObj.getDay()] + ' ' + d + ' ' + monthNames[m-1] + ' ' + y;
+  const isWedding = calSelectedDate === '2026-06-26';
+
+  const HOURS = ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
+  const withHour = dayRappels.filter(r => r.heure);
+  const withoutHour = dayRappels.filter(r => !r.heure);
+
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div style="background:var(--charcoal);padding:.8rem 1.5rem;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:300;color:white">${dateLabel}${isWedding?' 💍':''}</div>
+        <div style="font-size:.7rem;color:var(--gold-light)">${dayRappels.length} rappel${dayRappels.length!==1?'s':''} ce jour</div>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-sm btn-ghost" style="color:rgba(255,255,255,.6);border-color:rgba(255,255,255,.15)" onclick="openRappelModal(null,'${calSelectedDate}')">
+          <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M10 4v12M4 10h12" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"/></svg>
+          Ajouter
+        </button>
+        <button style="background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:1.1rem;padding:.1rem .3rem" onclick="selectCalDay('${calSelectedDate}')">×</button>
       </div>
     </div>
-  `;
+
+    <div style="display:flex;min-height:200px">
+      <!-- Hour column -->
+      <div style="border-right:1px solid var(--border);min-width:72px;position:relative">
+        ${dayRappels.length === 0 ? '' : HOURS.map(h => `
+          <div style="display:flex;align-items:flex-start;height:52px;border-bottom:1px solid rgba(44,37,32,.05);padding:.3rem .5rem;gap:.2rem">
+            <span style="font-size:.68rem;color:var(--muted);font-weight:400;white-space:nowrap">${h}</span>
+          </div>`).join('')}
+        ${dayRappels.length === 0 ? '<div style="padding:2rem 1rem;text-align:center;color:var(--muted)"><div style="font-size:1.5rem;opacity:.3;margin-bottom:.4rem">📅</div><div style="font-size:.8rem">Aucun rappel</div><div style="font-size:.72rem;margin-top:.3rem">Cliquez sur « Ajouter »</div></div>' : ''}
+      </div>
+
+      <!-- Events column -->
+      <div style="flex:1;position:relative;min-height:${HOURS.length * 52}px">
+        ${dayRappels.length === 0 ? '' : HOURS.map((h, hi) => {
+          const hNum = parseInt(h);
+          const slotRappels = withHour.filter(r => parseInt(r.heure) === hNum);
+          return `<div style="height:52px;border-bottom:1px solid rgba(44,37,32,.05);padding:.3rem .6rem;display:flex;flex-direction:column;gap:.2rem">
+            ${slotRappels.map(r => {
+              const rPids = getPersonIds(r);
+              return `<div onclick="openRappelModal('${r.id}')" style="background:${catColors[r.category]||'var(--muted)'};color:white;border-radius:5px;padding:.25rem .6rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;transition:opacity .15s;font-size:.78rem" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+                <span style="font-weight:500;flex-shrink:0">${r.heure.slice(0,5)}</span>
+                <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.name}</span>
+                ${rPids.length > 0 ? renderPersonAvatars(rPids) : ''}
+                <button onclick="event.stopPropagation();deleteRappel('${r.id}')" style="background:rgba(255,255,255,.2);border:none;color:white;border-radius:3px;padding:0 .3rem;cursor:pointer;font-size:.7rem;flex-shrink:0;line-height:1.4">×</button>
+              </div>`;
+            }).join('')}
+          </div>`;
+        }).join('')}
+        ${withoutHour.length > 0 ? `
+          <div style="padding:.6rem .8rem;border-top:1px solid var(--border);background:var(--ivory)">
+            <div style="font-size:.65rem;color:var(--muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.08em">Sans heure</div>
+            <div style="display:flex;flex-direction:column;gap:.3rem">
+              ${withoutHour.map(r => {
+                const rPids = getPersonIds(r);
+                return `<div onclick="openRappelModal('${r.id}')" style="background:${catColors[r.category]||'var(--muted)'};color:white;border-radius:5px;padding:.25rem .6rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.78rem">
+                  <span style="flex:1">${r.name}</span>
+                  ${rPids.length > 0 ? renderPersonAvatars(rPids) : ''}
+                  <button onclick="event.stopPropagation();deleteRappel('${r.id}')" style="background:rgba(255,255,255,.2);border:none;color:white;border-radius:3px;padding:0 .3rem;cursor:pointer;font-size:.7rem;line-height:1.4">×</button>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>` : ''}
+      </div>
+    </div>`;
+
+  // Smooth scroll to panel
+  setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
 }
 
-
-let _editingRappelId = null;
-function openRappelModal(id = null, defaultDate = null) {
-  _editingRappelId = id;
-  const r = id ? state.rappels.find(x => x.id === id) : null;
-  document.getElementById('rappel-modal-title').textContent = id ? 'Modifier le rappel' : 'Nouveau rappel';
-  document.getElementById('rappel-name').value = r?.name || '';
-  document.getElementById('rappel-date').value = r?.date || defaultDate || '';
-  document.getElementById('rappel-heure').value = r?.heure || '';
-  document.getElementById('rappel-category').value = r?.category || 'rdv';
-  const rappelPersonIds = getPersonIds(r);
-  const rappelPicker = document.querySelector('#rappel-person-picker');
-  if (rappelPicker) rappelPicker.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = rappelPersonIds.includes(cb.value); });
-  document.getElementById('rappel-notes').value = r?.notes || '';
-  document.getElementById('rappel-modal').style.display = 'flex';
-  document.getElementById('rappel-overlay').style.display = 'block';
-  setTimeout(() => document.getElementById('rappel-name').focus(), 50);
-}
-function closeRappelModal() {
-  document.getElementById('rappel-modal').style.display = 'none';
-  document.getElementById('rappel-overlay').style.display = 'none';
-}
-function saveRappel() {
-  const name = document.getElementById('rappel-name').value.trim();
-  const date = document.getElementById('rappel-date').value;
-  if (!name || !date) { toast('Nom et date requis.'); return; }
-  const rappel = {
-    id: _editingRappelId || uid(),
-    name, date,
-    heure: document.getElementById('rappel-heure').value,
-    category: document.getElementById('rappel-category').value,
-    personIds: getPickerValues('rappel-person'),
-    notes: document.getElementById('rappel-notes').value.trim(),
-  };
-  if (_editingRappelId) {
-    const idx = state.rappels.findIndex(r => r.id === _editingRappelId);
-    state.rappels[idx] = rappel;
-  } else {
-    state.rappels.push(rappel);
-  }
-  save(); closeRappelModal();
-  toast(_editingRappelId ? 'Rappel mis à jour !' : 'Rappel ajouté !');
-  renderCalendrier();
-}
-function deleteRappel(id) {
-  state.rappels = state.rappels.filter(r => r.id !== id);
-  save(); renderCalendrier(); toast('Rappel supprimé.');
-}
 
 // ─── ORGANISATION ───────────────────────────────
 
