@@ -42,6 +42,7 @@ function save() {
     budget: state.budget,
     tasks: state.tasks,
     events: state.events,
+    tablePositions: state.tablePositions,
   }));
 }
 
@@ -50,6 +51,7 @@ function load() {
   if (!raw) return;
   const data = JSON.parse(raw);
   Object.assign(state, data);
+  if (!state.tablePositions) state.tablePositions = {};
 }
 
 function toast(msg) {
@@ -496,6 +498,11 @@ function deleteGuest(id) {
 }
 
 // ─── SEATING ───────────────────────────────────
+// ─── SEATING VISUAL (drag & drop canvas) ──────
+
+// Table positions stored in state
+if (!state.tablePositions) state.tablePositions = {};
+
 function renderSeating() {
   const pg = document.getElementById('page-seating');
   const placedCount = state.tables.reduce((s, t) => s + t.guests.length, 0);
@@ -508,6 +515,14 @@ function renderSeating() {
         <div class="page-subtitle">${state.tables.length} table${state.tables.length > 1 ? 's' : ''} · ${placedCount} / ${state.guests.length} invités placés</div>
       </div>
       <div class="page-actions">
+        <button class="btn btn-ghost" onclick="toggleSeatingView()" id="seating-view-toggle">
+          <svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round"><rect x="2" y="3" width="7" height="7" rx="1"/><rect x="11" y="3" width="7" height="7" rx="1"/><rect x="2" y="11" width="7" height="7" rx="1"/><rect x="11" y="11" width="7" height="7" rx="1"/></svg>
+          Vue liste
+        </button>
+        <button class="btn btn-ghost" onclick="exportPDF()">
+          <svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round"><path d="M4 4h8l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M12 4v4h4M7 12h6M7 15h4"/></svg>
+          Exporter PDF
+        </button>
         <button class="btn btn-primary" onclick="openTableModal()">
           <svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
           Nouvelle table
@@ -515,63 +530,328 @@ function renderSeating() {
       </div>
     </div>
 
-    <div class="page-body">
-      ${unplaced.length > 0 ? `
-        <div style="background:var(--wine-pale);border:1px solid rgba(107,45,62,.15);border-radius:var(--radius);padding:.8rem 1.2rem;margin-bottom:1.5rem;font-size:.83rem;color:var(--wine)">
-          <strong>${unplaced.length} invité${unplaced.length > 1 ? 's' : ''} non placé${unplaced.length > 1 ? 's' : ''} :</strong>
-          ${unplaced.map(g => `${g.firstname} ${g.lastname}`).join(', ')}
-        </div>
-      ` : state.guests.length > 0 ? `
-        <div style="background:#EAF4EA;border:1px solid #8FC98A;border-radius:var(--radius);padding:.8rem 1.2rem;margin-bottom:1.5rem;font-size:.83rem;color:#3A7D44">
-          ✓ Tous les invités sont placés !
-        </div>
-      ` : ''}
+    ${unplaced.length > 0 ? `
+      <div style="padding:.6rem 2.5rem;background:var(--wine-pale);border-bottom:1px solid rgba(107,45,62,.15);font-size:.82rem;color:var(--wine)">
+        <strong>${unplaced.length} non placé${unplaced.length > 1 ? 's' : ''} :</strong>
+        ${unplaced.map(g => `${g.firstname} ${g.lastname}`).join(', ')}
+      </div>
+    ` : state.guests.length > 0 && state.tables.length > 0 ? `
+      <div style="padding:.6rem 2.5rem;background:#EAF4EA;border-bottom:1px solid #8FC98A;font-size:.82rem;color:#3A7D44">
+        ✓ Tous les invités sont placés !
+      </div>
+    ` : ''}
 
-      ${state.tables.length === 0 ? `
+    ${state.tables.length === 0 ? `
+      <div class="page-body">
         <div class="empty-state">
           <div class="empty-state-icon">🪑</div>
           <h4>Aucune table créée</h4>
           <p>Créez vos tables et assignez-y vos invités.</p>
         </div>
-      ` : `
-        <div class="seating-grid">
-          ${state.tables.map(table => {
-            const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
-            const empty = table.capacity - tableGuests.length;
-            const shapeIcons = { ronde: '⬤', rectangulaire: '▬', longue: '━' };
-            return `
-              <div class="table-card-seating">
-                <div class="table-card-header">
-                  <div>
-                    <div class="table-card-name">${table.name}</div>
-                    <div class="table-card-meta">${shapeIcons[table.shape] || ''} ${table.shape} · ${tableGuests.length}/${table.capacity} places</div>
-                  </div>
-                  <div style="display:flex;gap:.3rem">
-                    <button class="btn btn-sm btn-icon" style="color:var(--gold-light);border-color:rgba(255,255,255,.2)" onclick="openTableModal('${table.id}')" title="Modifier">
-                      <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M13.5 2.5L17.5 6.5L7 17H3v-4L13.5 2.5z" stroke-width="1.5"/></svg>
-                    </button>
-                    <button class="btn btn-sm btn-icon" style="color:#E8A0A0;border-color:rgba(255,255,255,.2)" onclick="deleteTable('${table.id}')" title="Supprimer">
-                      <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke-width="1.5"/></svg>
-                    </button>
-                  </div>
-                </div>
-                <div class="table-guests">
-                  ${tableGuests.map(g => `
-                    <div class="table-guest-item">
-                      <div class="avatar ${avatarColor(g.role)}" style="width:24px;height:24px;font-size:.65rem">${initials(g.firstname + ' ' + g.lastname)}</div>
-                      <span>${g.firstname} ${g.lastname}</span>
-                      ${g.diet !== 'standard' ? `<span style="font-size:.68rem;color:var(--muted)">(${g.diet})</span>` : ''}
-                    </div>
-                  `).join('')}
-                  ${Array.from({length: empty}).map(() => `<div class="table-empty-seats">— place libre</div>`).join('')}
-                </div>
-              </div>
-            `;
-          }).join('')}
+      </div>
+    ` : `
+      <div id="seating-canvas-wrap" style="position:relative;overflow:hidden;background:var(--ivory-2);border-top:1px solid var(--border);min-height:calc(100vh - 200px)">
+        <div id="seating-canvas" style="position:relative;width:100%;min-height:calc(100vh - 200px);overflow:auto">
+          <div id="seating-room" style="position:relative;width:1200px;min-height:700px;margin:0 auto;padding:20px">
+            <!-- Room border decoration -->
+            <div style="position:absolute;inset:12px;border:2px dashed rgba(44,37,32,.12);border-radius:16px;pointer-events:none;z-index:0"></div>
+            <div style="position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);pointer-events:none;z-index:1">— Salle de réception —</div>
+            ${state.tables.map(table => renderTableNode(table)).join('')}
+          </div>
         </div>
-      `}
+        <div style="position:absolute;bottom:1rem;right:1rem;font-size:.72rem;color:var(--muted);background:white;padding:.4rem .8rem;border-radius:20px;border:1px solid var(--border);pointer-events:none">
+          Glisser les tables pour les repositionner
+        </div>
+      </div>
+    `}
+  `;
+
+  if (state.tables.length > 0) {
+    initSeatingDrag();
+  }
+}
+
+function renderTableNode(table) {
+  const pos = state.tablePositions[table.id] || autoPosition(table.id);
+  const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
+  const isRound = table.shape === 'ronde';
+  const isLong = table.shape === 'longue';
+
+  const tableW = isLong ? 220 : isRound ? 140 : 180;
+  const tableH = isLong ? 80 : isRound ? 140 : 110;
+
+  // Draw seats around the table
+  const seats = buildSeats(table, tableGuests, tableW, tableH, isRound, isLong);
+
+  const guestListHTML = tableGuests.map(g => `
+    <div style="display:flex;align-items:center;gap:.35rem;padding:.18rem 0;border-bottom:1px solid rgba(44,37,32,.06);font-size:.68rem">
+      <div style="width:16px;height:16px;border-radius:50%;background:${roleColor(g.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;color:white;flex-shrink:0">${initials(g.firstname + ' ' + g.lastname)}</div>
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px">${g.firstname} ${g.lastname}</span>
+    </div>
+  `).join('');
+
+  const emptySeats = table.capacity - tableGuests.length;
+
+  return `
+    <div class="seating-node" data-table-id="${table.id}"
+      style="position:absolute;left:${pos.x}px;top:${pos.y}px;z-index:2;cursor:grab;user-select:none"
+      title="${table.name}">
+
+      <!-- Seat circles around table -->
+      <div style="position:relative;width:${tableW + 60}px;height:${tableH + 60}px">
+        ${seats}
+
+        <!-- Table surface -->
+        <div class="seating-table-surface" style="
+          position:absolute;
+          left:30px;top:30px;
+          width:${tableW}px;height:${tableH}px;
+          background:white;
+          border:2px solid var(--gold);
+          border-radius:${isRound ? '50%' : isLong ? '8px' : '12px'};
+          display:flex;flex-direction:column;align-items:center;justify-content:center;
+          box-shadow:0 4px 20px rgba(107,45,62,.12);
+          padding:.4rem;
+          text-align:center;
+        ">
+          <div style="font-family:var(--font-display);font-size:.82rem;font-weight:400;color:var(--charcoal);line-height:1.2;margin-bottom:.15rem">${table.name}</div>
+          <div style="font-size:.62rem;color:var(--gold);letter-spacing:.06em">${tableGuests.length}/${table.capacity}</div>
+        </div>
+      </div>
+
+      <!-- Tooltip on hover -->
+      <div class="seating-tooltip" style="
+        position:absolute;
+        top:${tableH + 70}px;left:50%;transform:translateX(-50%);
+        background:white;border:1px solid var(--border);border-radius:var(--radius);
+        padding:.6rem .8rem;min-width:160px;max-width:200px;
+        box-shadow:var(--shadow-lg);
+        z-index:100;
+        display:none;
+        pointer-events:none;
+      ">
+        <div style="font-family:var(--font-display);font-size:.9rem;font-weight:400;margin-bottom:.4rem;padding-bottom:.3rem;border-bottom:1px solid var(--border)">${table.name} <span style="font-size:.7rem;color:var(--gold)">${table.shape}</span></div>
+        ${guestListHTML}
+        ${emptySeats > 0 ? `<div style="font-size:.65rem;color:var(--muted);font-style:italic;margin-top:.3rem">${emptySeats} place${emptySeats > 1 ? 's' : ''} libre${emptySeats > 1 ? 's' : ''}</div>` : ''}
+        <div style="display:flex;gap:.3rem;margin-top:.5rem;pointer-events:all">
+          <button class="btn btn-sm btn-ghost" style="flex:1;font-size:.68rem" onclick="event.stopPropagation();openTableModal('${table.id}')">Modifier</button>
+          <button class="btn btn-sm btn-icon" style="color:#C0392B" onclick="event.stopPropagation();deleteTable('${table.id}')">
+            <svg viewBox="0 0 20 20" style="width:11px;height:11px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
     </div>
   `;
+}
+
+function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong) {
+  const total = table.capacity;
+  const seatSize = 28;
+  const cx = tableW / 2 + 30;
+  const cy = tableH / 2 + 30;
+  let seats = '';
+
+  for (let i = 0; i < total; i++) {
+    const guest = tableGuests[i] || null;
+    let sx, sy;
+
+    if (isRound) {
+      const angle = (i / total) * 2 * Math.PI - Math.PI / 2;
+      const rx = tableW / 2 + 22;
+      const ry = tableH / 2 + 22;
+      sx = cx + rx * Math.cos(angle) - seatSize / 2;
+      sy = cy + ry * Math.sin(angle) - seatSize / 2;
+    } else if (isLong) {
+      const perSide = Math.ceil(total / 2);
+      const side = i < perSide ? 0 : 1;
+      const idx = i < perSide ? i : i - perSide;
+      const spacing = tableW / (perSide + 1);
+      sx = 30 + spacing * (idx + 1) - seatSize / 2;
+      sy = side === 0 ? 30 - 24 : 30 + tableH - 4;
+    } else {
+      // Rectangular: distribute around
+      const perSide = Math.ceil(total / 4);
+      const side = Math.floor(i / perSide);
+      const idx = i % perSide;
+      const spacingX = tableW / (perSide + 1);
+      const spacingY = tableH / (perSide + 1);
+      if (side === 0) { sx = 30 + spacingX * (idx + 1) - seatSize / 2; sy = 30 - 24; }
+      else if (side === 1) { sx = 30 + tableW - 4; sy = 30 + spacingY * (idx + 1) - seatSize / 2; }
+      else if (side === 2) { sx = 30 + spacingX * (idx + 1) - seatSize / 2; sy = 30 + tableH - 4; }
+      else { sx = 30 - 24; sy = 30 + spacingY * (idx + 1) - seatSize / 2; }
+    }
+
+    const bg = guest ? roleColor(guest.role) : 'var(--ivory-3)';
+    const label = guest ? initials(guest.firstname + ' ' + guest.lastname) : '';
+    const title = guest ? `${guest.firstname} ${guest.lastname}` : 'Place libre';
+
+    seats += `
+      <div title="${title}" style="
+        position:absolute;
+        left:${sx}px;top:${sy}px;
+        width:${seatSize}px;height:${seatSize}px;
+        border-radius:50%;
+        background:${bg};
+        border:2px solid ${guest ? 'transparent' : 'var(--border-hover)'};
+        display:flex;align-items:center;justify-content:center;
+        font-size:.55rem;font-weight:600;color:${guest ? 'white' : 'var(--muted)'};
+        font-family:var(--font-body);
+        box-shadow:${guest ? '0 2px 6px rgba(0,0,0,.15)' : 'none'};
+        transition:transform .15s;
+        z-index:3;
+      ">${label}</div>
+    `;
+  }
+  return seats;
+}
+
+function roleColor(role) {
+  const map = {
+    'témoin-marié': '#C19B5E',
+    'témoin-mariée': '#C19B5E',
+    'demoiselle-honneur': '#7A8C6E',
+    'garçon-honneur': '#7A8C6E',
+    'famille-marié': '#6B2D3E',
+    'famille-mariée': '#8B3D52',
+    'enfant': '#4A7C9F',
+    'invité': '#4A3F38',
+  };
+  return map[role] || '#4A3F38';
+}
+
+function autoPosition(tableId) {
+  const idx = state.tables.findIndex(t => t.id === tableId);
+  const cols = 3;
+  const col = idx % cols;
+  const row = Math.floor(idx / cols);
+  const pos = { x: 60 + col * 260, y: 60 + row * 260 };
+  state.tablePositions[tableId] = pos;
+  return pos;
+}
+
+function initSeatingDrag() {
+  const nodes = document.querySelectorAll('.seating-node');
+  nodes.forEach(node => {
+    const tableId = node.dataset.tableId;
+
+    // Show tooltip on hover
+    node.addEventListener('mouseenter', () => {
+      const tt = node.querySelector('.seating-tooltip');
+      if (tt) tt.style.display = 'block';
+    });
+    node.addEventListener('mouseleave', () => {
+      const tt = node.querySelector('.seating-tooltip');
+      if (tt) tt.style.display = 'none';
+    });
+
+    // Drag
+    let dragging = false, startX, startY, origX, origY;
+
+    node.addEventListener('mousedown', e => {
+      if (e.target.closest('button') || e.target.closest('.seating-tooltip')) return;
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      const pos = state.tablePositions[tableId] || { x: 0, y: 0 };
+      origX = pos.x;
+      origY = pos.y;
+      node.style.cursor = 'grabbing';
+      node.style.zIndex = 50;
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const newX = Math.max(0, origX + dx);
+      const newY = Math.max(0, origY + dy);
+      node.style.left = newX + 'px';
+      node.style.top = newY + 'px';
+    });
+
+    document.addEventListener('mouseup', e => {
+      if (!dragging) return;
+      dragging = false;
+      node.style.cursor = 'grab';
+      node.style.zIndex = 2;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const pos = state.tablePositions[tableId] || { x: 0, y: 0 };
+      state.tablePositions[tableId] = {
+        x: Math.max(0, pos.x + dx - (pos.x - origX - dx)),
+        y: Math.max(0, pos.y + dy - (pos.y - origY - dy)),
+      };
+      // Simpler: just use node's current offset
+      state.tablePositions[tableId] = {
+        x: parseInt(node.style.left),
+        y: parseInt(node.style.top),
+      };
+      save();
+    });
+  });
+}
+
+function toggleSeatingView() {
+  const btn = document.getElementById('seating-view-toggle');
+  const canvas = document.getElementById('seating-canvas-wrap');
+  const grid = document.getElementById('seating-list-view');
+
+  // Toggle between visual canvas and list view
+  if (canvas && canvas.style.display !== 'none') {
+    canvas.style.display = 'none';
+    // Insert list view
+    const listHTML = buildSeatingListView();
+    const wrap = document.createElement('div');
+    wrap.id = 'seating-list-view';
+    wrap.innerHTML = listHTML;
+    canvas.parentNode.insertBefore(wrap, canvas.nextSibling);
+    btn.textContent = 'Vue salle';
+  } else {
+    if (grid) grid.remove();
+    if (canvas) canvas.style.display = '';
+    btn.innerHTML = `<svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round"><rect x="2" y="3" width="7" height="7" rx="1"/><rect x="11" y="3" width="7" height="7" rx="1"/><rect x="2" y="11" width="7" height="7" rx="1"/><rect x="11" y="11" width="7" height="7" rx="1"/></svg> Vue liste`;
+  }
+}
+
+function buildSeatingListView() {
+  return `<div class="page-body" style="padding-top:1.5rem">
+    <div class="seating-grid">
+      ${state.tables.map(table => {
+        const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
+        const empty = table.capacity - tableGuests.length;
+        const shapeIcons = { ronde: '⬤', rectangulaire: '▬', longue: '━' };
+        return `
+          <div class="table-card-seating">
+            <div class="table-card-header">
+              <div>
+                <div class="table-card-name">${table.name}</div>
+                <div class="table-card-meta">${shapeIcons[table.shape] || ''} ${table.shape} · ${tableGuests.length}/${table.capacity} places</div>
+              </div>
+              <div style="display:flex;gap:.3rem">
+                <button class="btn btn-sm btn-icon" style="color:var(--gold-light);border-color:rgba(255,255,255,.2)" onclick="openTableModal('${table.id}')">
+                  <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M13.5 2.5L17.5 6.5L7 17H3v-4L13.5 2.5z" stroke-width="1.5"/></svg>
+                </button>
+                <button class="btn btn-sm btn-icon" style="color:#E8A0A0;border-color:rgba(255,255,255,.2)" onclick="deleteTable('${table.id}')">
+                  <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke-width="1.5"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="table-guests">
+              ${tableGuests.map(g => `
+                <div class="table-guest-item">
+                  <div class="avatar ${avatarColor(g.role)}" style="width:24px;height:24px;font-size:.65rem">${initials(g.firstname + ' ' + g.lastname)}</div>
+                  <span>${g.firstname} ${g.lastname}</span>
+                  ${g.diet !== 'standard' ? `<span style="font-size:.68rem;color:var(--muted)">(${g.diet})</span>` : ''}
+                </div>
+              `).join('')}
+              ${Array.from({length: empty}).map(() => `<div class="table-empty-seats">— place libre</div>`).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  </div>`;
 }
 
 function openTableModal(id = null) {
@@ -1115,6 +1395,125 @@ function deleteEvent(id) {
   state.events = state.events.filter(e => e.id !== id);
   save();
   renderPlanning();
+}
+
+// ─── EXPORT PDF ────────────────────────────────
+function exportPDF() {
+  const win = window.open('', '_blank');
+  const guestRows = state.guests.map(g => {
+    const table = state.tables.find(t => t.guests.includes(g.id));
+    const roleLabels = {
+      'invité': 'Invité', 'témoin-marié': 'Témoin ♂', 'témoin-mariée': 'Témoin ♀',
+      'demoiselle-honneur': "Dem. d'honneur", 'garçon-honneur': "Garçon d'honneur",
+      'famille-marié': 'Famille Adil', 'famille-mariée': 'Famille Nadiya', 'enfant': 'Enfant',
+    };
+    const rsvpLabel = { 'confirmé': '✓ Confirmé', 'décliné': '✗ Décliné', 'en-attente': '⏳ En attente' };
+    return `<tr>
+      <td>${g.firstname} ${g.lastname}</td>
+      <td>${roleLabels[g.role] || g.role}</td>
+      <td>${g.side === 'adil' ? 'Adil' : g.side === 'nadiya' ? 'Nadiya' : 'Commun'}</td>
+      <td>${rsvpLabel[g.rsvp] || g.rsvp}</td>
+      <td>${g.diet !== 'standard' ? g.diet : '—'}</td>
+      <td>${table ? table.name : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const tableRows = state.tables.map(table => {
+    const guests = state.guests.filter(g => table.guests.includes(g.id));
+    return `
+      <div class="table-block">
+        <div class="table-header">${table.name} <span class="table-meta">${table.shape} · ${guests.length}/${table.capacity} places</span></div>
+        ${guests.length > 0 ? `<ul>${guests.map(g => `<li>${g.firstname} ${g.lastname}${g.diet !== 'standard' ? ` <em>(${g.diet})</em>` : ''}</li>`).join('')}</ul>` : '<p class="empty">Aucun invité assigné</p>'}
+      </div>
+    `;
+  }).join('');
+
+  const menuHTML = state.menuSections.map(s => {
+    if (s.items.length === 0) return '';
+    return `
+      <div class="menu-block">
+        <div class="menu-header">${s.name}</div>
+        <ul>${s.items.map(item => `<li><strong>${item.name}</strong>${item.desc ? ` — ${item.desc}` : ''}${item.vege ? ' <span class="tag">Végé</span>' : ''}${item.halal ? ' <span class="tag halal">Halal</span>' : ''}</li>`).join('')}</ul>
+      </div>
+    `;
+  }).join('');
+
+  win.document.write(`<!DOCTYPE html><html lang="fr"><head>
+  <meta charset="UTF-8">
+  <title>Adil & Nadiya — 26 juin 2026</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Jost', sans-serif; color: #2C2520; background: white; font-size: 11pt; line-height: 1.5; }
+    .page { padding: 2cm 2.5cm; max-width: 21cm; margin: 0 auto; }
+    h1 { font-family: 'Cormorant Garamond', serif; font-size: 28pt; font-weight: 300; text-align: center; color: #2C2520; margin-bottom: .3cm; }
+    .subtitle { text-align: center; font-size: 9pt; letter-spacing: .2em; text-transform: uppercase; color: #8A7D74; margin-bottom: 1cm; }
+    .ornament { text-align: center; color: #C19B5E; font-size: 14pt; margin: .6cm 0; letter-spacing: .3em; }
+    h2 { font-family: 'Cormorant Garamond', serif; font-size: 18pt; font-weight: 400; color: #6B2D3E; margin: .8cm 0 .3cm; padding-bottom: .2cm; border-bottom: 1px solid #e8ddd0; }
+    table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: .3cm; }
+    th { background: #2C2520; color: white; padding: .25cm .4cm; text-align: left; font-size: 8pt; letter-spacing: .08em; text-transform: uppercase; font-weight: 400; }
+    td { padding: .2cm .4cm; border-bottom: 1px solid #e8ddd0; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:nth-child(even) td { background: #faf5ee; }
+    .tables-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .5cm; margin-top: .3cm; }
+    .table-block { background: #faf5ee; border: 1px solid #e8ddd0; border-radius: 6px; padding: .4cm; break-inside: avoid; }
+    .table-header { font-family: 'Cormorant Garamond', serif; font-size: 13pt; font-weight: 400; color: #2C2520; margin-bottom: .2cm; }
+    .table-meta { font-size: 8pt; color: #C19B5E; font-family: 'Jost', sans-serif; }
+    .table-block ul { list-style: none; padding: 0; }
+    .table-block li { font-size: 9pt; padding: .08cm 0; border-bottom: 1px solid #e8ddd0; color: #4A3F38; }
+    .table-block li:last-child { border-bottom: none; }
+    .table-block em { color: #8A7D74; font-style: normal; }
+    .empty { font-size: 9pt; color: #8A7D74; font-style: italic; }
+    .menu-block { margin-bottom: .5cm; break-inside: avoid; }
+    .menu-header { font-family: 'Cormorant Garamond', serif; font-size: 14pt; font-weight: 400; color: #6B2D3E; margin-bottom: .2cm; }
+    .menu-block ul { list-style: none; padding: 0; }
+    .menu-block li { padding: .15cm .3cm; border-bottom: 1px solid #e8ddd0; font-size: 9.5pt; }
+    .menu-block li:last-child { border-bottom: none; }
+    .tag { background: #edf2eb; color: #7A8C6E; font-size: 7.5pt; padding: .05cm .2cm; border-radius: 4px; margin-left: .2cm; }
+    .tag.halal { background: #faf3e8; color: #C19B5E; }
+    .page-break { page-break-before: always; padding-top: 1cm; }
+    @media print {
+      body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .no-print { display: none; }
+    }
+    .print-btn { display: block; margin: 1cm auto; padding: .3cm 1cm; background: #6B2D3E; color: white; border: none; border-radius: 6px; font-size: 11pt; cursor: pointer; font-family: 'Jost', sans-serif; }
+  </style>
+</head><body>
+  <div class="page">
+    <button class="print-btn no-print" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+
+    <h1>Adil <em style="color:#C19B5E;font-style:italic">&</em> Nadiya</h1>
+    <div class="subtitle">26 · Juin · 2026 &nbsp;·&nbsp; Plan de mariage</div>
+    <div class="ornament">✦ ── ✦ ── ✦</div>
+
+    ${state.tables.length > 0 ? `
+      <h2>Plan de table</h2>
+      <div class="tables-grid">${tableRows}</div>
+    ` : ''}
+
+    <div class="page-break">
+      <h2>Liste des invités</h2>
+      ${state.guests.length === 0 ? '<p class="empty">Aucun invité enregistré.</p>' : `
+        <table>
+          <thead><tr><th>Nom</th><th>Rôle</th><th>Côté</th><th>RSVP</th><th>Régime</th><th>Table</th></tr></thead>
+          <tbody>${guestRows}</tbody>
+        </table>
+      `}
+    </div>
+
+    ${menuHTML ? `
+      <div class="page-break">
+        <h2>Menu du mariage</h2>
+        <div class="ornament" style="font-size:11pt;margin:.3cm 0">✦ ── ✦ ── ✦</div>
+        ${menuHTML}
+      </div>
+    ` : ''}
+
+    <div class="ornament" style="margin-top:1cm">✦ ── ✦ ── ✦</div>
+    <div class="subtitle" style="margin-top:.3cm">Généré avec Wedding Planner · Adil & Nadiya 2026</div>
+  </div>
+</body></html>`);
+  win.document.close();
 }
 
 // ─── INIT ─────────────────────────────────────
