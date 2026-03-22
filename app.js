@@ -3244,12 +3244,18 @@ function renderDayPanel(targetEl) {
             </div>`;
           }).join('');
         }),
-        withoutHour.length > 0 ? [`
-          <div style="border-top:1px dashed var(--border);margin:.2rem 0"></div>
-          ${withoutHour.map(r => {
+        withoutHour.length > 0 ? withoutHour.map(r => {
             const rPids = getPersonIds(r);
-            return '<div style="display:flex;gap:.6rem;align-items:center"><span style="font-size:.68rem;color:var(--muted);min-width:40px;text-align:right;flex-shrink:0">—</span><div onclick="openRappelModal('' + r.id + '')" style="flex:1;background:' + (catColors[r.category]||'var(--muted)') + ';color:white;border-radius:5px;padding:.3rem .7rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.8rem"><span style="flex:1">' + r.name + '</span>' + (rPids.length>0?renderPersonAvatars(rPids):'') + '<button onclick="event.stopPropagation();deleteRappel('' + r.id + '')" style="background:rgba(255,255,255,.15);border:none;color:white;border-radius:3px;padding:0 .35rem;cursor:pointer;font-size:.72rem;line-height:1.5">×</button></div></div>';
-          }).join('')}`] : []
+            const rId = r.id;
+            return `<div style="display:flex;gap:.6rem;align-items:center">
+              <span style="font-size:.68rem;color:var(--muted);min-width:40px;text-align:right;flex-shrink:0">—</span>
+              <div onclick="openRappelModal('${rId}')" style="flex:1;background:${catColors[r.category]||'var(--muted)'};color:white;border-radius:5px;padding:.3rem .7rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.8rem">
+                <span style="flex:1">${r.name}</span>
+                ${rPids.length>0?renderPersonAvatars(rPids):''}
+                <button onclick="event.stopPropagation();deleteRappel('${rId}')" style="background:rgba(255,255,255,.15);border:none;color:white;border-radius:3px;padding:0 .35rem;cursor:pointer;font-size:.72rem;line-height:1.5">×</button>
+              </div>
+            </div>`;
+          }).join('<div style="height:2px"></div>') : []
         ].flat().join('')}
     </div>`;
 
