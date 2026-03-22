@@ -2649,7 +2649,7 @@ function renderJourJ() {
         <div id="jourj-cat-${cat}" class="checklist-section">
           <div class="checklist-section-title">${cat.charAt(0).toUpperCase()+cat.slice(1)}</div>
           ${byCat[cat].map(task => {
-            const person = task.personId ? findPerson(task.personId) : null;
+            const taskPersonIds = getPersonIds(task);
             const jeu = task.jeuId ? state.jeux?.find(j => j.id === task.jeuId) : null;
             return `
               <div class="task-item ${task.statut==='fait'?'done':''}" style="gap:.6rem">
