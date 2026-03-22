@@ -665,29 +665,91 @@ function renderTableNode(table) {
   `;
 }
 
-function defaultSeatPos(i, total, tableW, tableH, isRound, isLong, pad) {
+// ── Seat geometry helpers ────────────────────
+
+// Returns the angle (radians) of a point projected onto the table perimeter
+// For round tables: project mouse onto circle edge
+// For rect/long tables: project mouse onto rectangle edge
+// tableCenter = {cx, cy} in node-local coords (center of the table surface)
+
+function clampSeatToPerimeter(mouseX, mouseY, tableW, tableH, isRound, isLong, pad) {
   const seatSize = 26;
-  const cx = tableW / 2 + pad;
-  const cy = tableH / 2 + pad;
-  let sx, sy;
+  const gap = 5; // gap between seat edge and table edge
+  const r = seatSize / 2;
+
+  // Table center in node coords
+  const cx = pad + tableW / 2;
+  const cy = pad + tableH / 2;
+
+  // Vector from table center to mouse
+  let dx = mouseX - cx;
+  let dy = mouseY - cy;
+
   if (isRound) {
-    const angle = (i / total) * 2 * Math.PI - Math.PI / 2;
-    const rx = tableW / 2 + 20;
-    const ry = tableH / 2 + 20;
-    sx = cx + rx * Math.cos(angle) - seatSize / 2;
-    sy = cy + ry * Math.sin(angle) - seatSize / 2;
+    // Project onto circle with radius = tableRadius + gap + seatRadius
+    const tableR = Math.min(tableW, tableH) / 2;
+    const dist = Math.hypot(dx, dy) || 1;
+    const orbitR = tableR + gap + r;
+    const angle = Math.atan2(dy, dx);
+    return {
+      sx: cx + Math.cos(angle) * orbitR - r,
+      sy: cy + Math.sin(angle) * orbitR - r,
+      angle,
+    };
+  } else {
+    // Project onto rectangle perimeter
+    const hw = tableW / 2 + gap + r; // half-width of orbit rectangle
+    const hh = tableH / 2 + gap + r; // half-height
+
+    // Find the angle and project to closest edge
+    const angle = Math.atan2(dy, dx);
+
+    // Parametric: find where ray hits rectangle
+    let t;
+    if (dx === 0 && dy === 0) { dx = 1; dy = 0; }
+    const tx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+    const ty = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+    t = Math.min(tx, ty);
+
+    const px = cx + dx * t;
+    const py = cy + dy * t;
+
+    return {
+      sx: px - r,
+      sy: py - r,
+      angle,
+    };
+  }
+}
+
+function defaultSeatAngle(i, total, tableW, tableH, isRound, isLong, pad) {
+  // Returns default angle for seat i around the table
+  const seatSize = 26;
+  const r = seatSize / 2;
+  const gap = 5;
+  const cx = pad + tableW / 2;
+  const cy = pad + tableH / 2;
+
+  if (isRound) {
+    return (i / total) * 2 * Math.PI - Math.PI / 2;
   } else if (isLong) {
     const topCount = Math.ceil(total / 2);
     const botCount = total - topCount;
+    const hw = tableW / 2 + gap + r;
+    const hh = tableH / 2 + gap + r;
     if (i < topCount) {
-      sx = pad + (tableW / (topCount + 1)) * (i + 1) - seatSize / 2;
-      sy = pad - seatSize - 4;
+      // Top side: spread from left to right
+      const frac = (i + 1) / (topCount + 1); // 0..1
+      const px = cx - hw + frac * 2 * hw;
+      return Math.atan2(-hh, px - cx);
     } else {
       const j = i - topCount;
-      sx = pad + (tableW / (botCount + 1)) * (j + 1) - seatSize / 2;
-      sy = pad + tableH + 4;
+      const frac = (j + 1) / (botCount + 1);
+      const px = cx - hw + frac * 2 * hw;
+      return Math.atan2(hh, px - cx);
     }
   } else {
+    // Rectangular: 4 sides
     const sides = distributeSeatsSides(total);
     let sideIdx = 0, posInSide = 0, counted = 0;
     for (let s = 0; s < 4; s++) {
@@ -695,12 +757,28 @@ function defaultSeatPos(i, total, tableW, tableH, isRound, isLong, pad) {
       counted += sides[s];
     }
     const n = sides[sideIdx];
-    if (sideIdx === 0) { sx = pad + (tableW / (n + 1)) * (posInSide + 1) - seatSize / 2; sy = pad - seatSize - 4; }
-    else if (sideIdx === 1) { sx = pad + tableW + 4; sy = pad + (tableH / (n + 1)) * (posInSide + 1) - seatSize / 2; }
-    else if (sideIdx === 2) { sx = pad + (tableW / (n + 1)) * (posInSide + 1) - seatSize / 2; sy = pad + tableH + 4; }
-    else { sx = pad - seatSize - 4; sy = pad + (tableH / (n + 1)) * (posInSide + 1) - seatSize / 2; }
+    const hw = tableW / 2 + gap + r;
+    const hh = tableH / 2 + gap + r;
+    const frac = (posInSide + 1) / (n + 1);
+    if (sideIdx === 0) return Math.atan2(-hh, cx - hw + frac * 2 * hw - cx); // top
+    if (sideIdx === 1) return Math.atan2(cy - hh + frac * 2 * hh - cy, hw);  // right
+    if (sideIdx === 2) return Math.atan2(hh, cx - hw + frac * 2 * hw - cx);  // bottom
+    return Math.atan2(cy - hh + frac * 2 * hh - cy, -hw); // left
   }
-  return { sx: Math.round(sx), sy: Math.round(sy) };
+}
+
+function seatPosFromAngle(angle, tableW, tableH, isRound, isLong, pad) {
+  const seatSize = 26;
+  const r = seatSize / 2;
+  const gap = 5;
+  const cx = pad + tableW / 2;
+  const cy = pad + tableH / 2;
+
+  // Build a fake mouse point far along the angle so clampSeatToPerimeter handles it
+  const far = 1000;
+  const mx = cx + Math.cos(angle) * far;
+  const my = cy + Math.sin(angle) * far;
+  return clampSeatToPerimeter(mx, my, tableW, tableH, isRound, isLong, pad);
 }
 
 function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong, pad) {
@@ -711,37 +789,32 @@ function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong, pad) {
   for (let i = 0; i < total; i++) {
     const guest = tableGuests[i] || null;
     const key = table.id + ':' + i;
-    const offset = state.seatOffsets[key] || { dx: 0, dy: 0 };
-    const def = defaultSeatPos(i, total, tableW, tableH, isRound, isLong, pad);
-    const sx = def.sx + offset.dx;
-    const sy = def.sy + offset.dy;
+
+    // Angle: either saved or default
+    let angle;
+    if (state.seatOffsets[key] !== undefined) {
+      angle = state.seatOffsets[key].angle;
+    } else {
+      angle = defaultSeatAngle(i, total, tableW, tableH, isRound, isLong, pad);
+    }
+
+    const pos = seatPosFromAngle(angle, tableW, tableH, isRound, isLong, pad);
+    const sx = pos.sx;
+    const sy = pos.sy;
 
     const bg = guest ? roleColor(guest.role) : 'var(--ivory-3)';
     const label = guest ? initials(guest.firstname + ' ' + guest.lastname) : '';
     const title = guest ? guest.firstname + ' ' + guest.lastname : 'Place libre';
-    const hasMoved = offset.dx !== 0 || offset.dy !== 0;
+    const hasMoved = state.seatOffsets[key] !== undefined;
 
-    // Draw anchor line from default position to current if moved
-    const linePart = hasMoved ? (() => {
-      const defX = def.sx + seatSize / 2;
-      const defY = def.sy + seatSize / 2;
-      const curX = sx + seatSize / 2;
-      const curY = sy + seatSize / 2;
-      const len = Math.hypot(curX - defX, curY - defY);
-      const angle = Math.atan2(curY - defY, curX - defX) * 180 / Math.PI;
-      return '<div style="position:absolute;left:' + defX + 'px;top:' + defY + 'px;width:' + len + 'px;height:1px;background:rgba(193,155,94,.4);transform-origin:0 50%;transform:rotate(' + angle + 'deg);pointer-events:none;z-index:1"></div>';
-    })() : '';
-
-    seats += linePart + '<div class="draggable-seat" data-table-id="' + table.id + '" data-seat-idx="' + i + '" title="' + title + '" style="position:absolute;left:' + sx + 'px;top:' + sy + 'px;width:' + seatSize + 'px;height:' + seatSize + 'px;border-radius:50%;background:' + bg + ';border:2px solid ' + (guest ? 'rgba(255,255,255,.4)' : 'var(--border-hover)') + ';display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;color:' + (guest ? 'white' : 'var(--muted)') + ';font-family:var(--font-body);box-shadow:' + (guest ? '0 1px 4px rgba(0,0,0,.2)' : 'none') + ';z-index:4;cursor:grab;' + (hasMoved ? 'outline:1.5px dashed rgba(193,155,94,.6);outline-offset:2px;' : '') + '">' + label + '</div>';
+    seats += '<div class="draggable-seat" data-table-id="' + table.id + '" data-seat-idx="' + i + '" title="' + title + '" style="position:absolute;left:' + Math.round(sx) + 'px;top:' + Math.round(sy) + 'px;width:' + seatSize + 'px;height:' + seatSize + 'px;border-radius:50%;background:' + bg + ';border:2px solid ' + (guest ? 'rgba(255,255,255,.5)' : 'var(--border-hover)') + ';display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;color:' + (guest ? 'white' : 'var(--muted)') + ';font-family:var(--font-body);box-shadow:' + (guest ? '0 1px 5px rgba(0,0,0,.25)' : 'none') + ';z-index:4;cursor:grab' + (hasMoved ? ';outline:1.5px dashed rgba(193,155,94,.7);outline-offset:2px' : '') + '">' + label + '</div>';
   }
   return seats;
 }
 
 function distributeSeatsSides(total) {
-  // Distribute seats on 4 sides of a rectangle as evenly as possible
   const base = Math.floor(total / 4);
   const rem = total % 4;
-  // top, right, bottom, left — put extras on top/bottom first
   return [
     base + (rem > 0 ? 1 : 0),
     base + (rem > 3 ? 1 : 0),
@@ -765,172 +838,15 @@ function autoPosition(tableId) {
   const cols = 3;
   const col = idx % cols;
   const row = Math.floor(idx / cols);
-  const pos = { x: 60 + col * 280, y: 70 + row * 280 };
+  const pos = { x: 60 + col * 300, y: 70 + row * 300 };
   state.tablePositions[tableId] = pos;
   return pos;
-}
-
-function seatingSelectTable(e, tableId) {
-  e.stopPropagation();
-  if (seatingSelectedId === tableId) return; // already selected, let drag work
-  seatingSelectedId = tableId;
-  refreshSeatingCanvas();
-  renderSeatingPanel(tableId);
-}
-
-function seatingDeselectAll(e) {
-  if (e.target.closest('.seating-node')) return;
-  seatingSelectedId = null;
-  refreshSeatingCanvas();
-  const panel = document.getElementById('seating-panel-content');
-  if (panel) panel.innerHTML = `
-    <div style="text-align:center;padding:2rem 1rem;color:var(--muted)">
-      <div style="font-size:1.8rem;margin-bottom:.5rem;opacity:.3">🪑</div>
-      <div style="font-family:var(--font-display);font-size:1rem;font-weight:400;color:var(--charcoal-2);margin-bottom:.3rem">Sélectionner une table</div>
-      <div style="font-size:.78rem">Cliquez sur une table pour voir ses détails et options</div>
-    </div>`;
-}
-
-function refreshSeatingCanvas() {
-  // Re-render only the table nodes without full page re-render
-  state.tables.forEach(table => {
-    const node = document.querySelector(`.seating-node[data-table-id="${table.id}"]`);
-    if (!node) return;
-    const pos = state.tablePositions[table.id] || autoPosition(table.id);
-    node.outerHTML; // read it
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = renderTableNode(table);
-    const newNode = tempDiv.firstElementChild;
-    // preserve position
-    newNode.style.left = node.style.left || pos.x + 'px';
-    newNode.style.top = node.style.top || pos.y + 'px';
-    node.parentNode.replaceChild(newNode, node);
-  });
-  initSeatingDrag();
-}
-
-function renderSeatingPanel(tableId) {
-  const table = state.tables.find(t => t.id === tableId);
-  if (!table) return;
-  const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
-  const empty = table.capacity - tableGuests.length;
-  const panel = document.getElementById('seating-panel-content');
-  if (!panel) return;
-
-  const dietLabels = { végétarien: '🥗', végétalien: '🌱', halal: '☪️', 'sans-gluten': '🌾', autre: '⚠️' };
-  const roleLabels = {
-    'invité': 'Invité', 'témoin-marié': 'Témoin ♂', 'témoin-mariée': 'Témoin ♀',
-    'demoiselle-honneur': "Dem. d'honneur", 'garçon-honneur': "Garçon d'honneur",
-    'famille-marié': 'Famille Adil', 'famille-mariée': 'Famille Nadiya', 'enfant': 'Enfant',
-  };
-
-  panel.innerHTML = `
-    <div>
-      <!-- Table header -->
-      <div style="margin-bottom:1rem;padding-bottom:.8rem;border-bottom:1px solid var(--border)">
-        <div style="font-family:var(--font-display);font-size:1.3rem;font-weight:400;color:var(--charcoal);margin-bottom:.25rem">${table.name}</div>
-        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-          <span class="badge badge-gray">${table.shape}</span>
-          <span class="badge ${empty === 0 ? 'badge-green' : 'badge-gold'}">${tableGuests.length}/${table.capacity} places</span>
-          ${empty > 0 ? `<span class="badge badge-gray">${empty} libre${empty > 1 ? 's' : ''}</span>` : ''}
-        </div>
-      </div>
-
-      <!-- Actions -->
-      <div style="display:flex;gap:.4rem;margin-bottom:.5rem">
-        <button class="btn btn-primary btn-sm" style="flex:1" onclick="openTableModal('${table.id}')">
-          <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M13.5 2.5L17.5 6.5L7 17H3v-4L13.5 2.5z" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
-          Modifier
-        </button>
-        <button class="btn btn-ghost btn-sm" style="color:#C0392B;border-color:rgba(192,57,43,.3)" onclick="deleteTable('${table.id}')">
-          <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </button>
-      </div>
-      <button class="btn btn-ghost btn-sm" style="width:100%;font-size:.72rem;margin-bottom:1rem;color:var(--muted)" onclick="resetSeatOffsets('${table.id}')">
-        <svg viewBox="0 0 20 20" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 4v5h5M16 16v-5h-5M4.09 9A8 8 0 1116 15.91"/></svg>
-        Réinitialiser positions des sièges
-      </button>
-
-      <!-- Guests list -->
-      <div style="font-size:.72rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem">Invités (${tableGuests.length})</div>
-
-      ${tableGuests.length === 0 ? `
-        <div style="font-size:.8rem;color:var(--muted);font-style:italic;text-align:center;padding:.8rem 0">Aucun invité assigné</div>
-      ` : tableGuests.map(g => `
-        <div style="display:flex;align-items:center;gap:.5rem;padding:.45rem 0;border-bottom:1px solid var(--border)">
-          <div style="width:26px;height:26px;border-radius:50%;background:${roleColor(g.role)};display:flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:600;color:white;flex-shrink:0">${initials(g.firstname + ' ' + g.lastname)}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.firstname} ${g.lastname}</div>
-            <div style="font-size:.68rem;color:var(--muted)">${roleLabels[g.role] || g.role}${g.diet !== 'standard' ? ` · ${dietLabels[g.diet] || ''} ${g.diet}` : ''}</div>
-          </div>
-          ${g.rsvp === 'confirmé' ? '<span style="color:#3A7D44;font-size:.75rem">✓</span>' : g.rsvp === 'décliné' ? '<span style="color:#C0392B;font-size:.75rem">✗</span>' : '<span style="color:var(--muted);font-size:.75rem">⏳</span>'}
-        </div>
-      `).join('')}
-
-      ${empty > 0 ? `
-        <div style="margin-top:.6rem">
-          ${Array.from({length: empty}).map(() => `
-            <div style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--border)">
-              <div style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--border-hover);flex-shrink:0"></div>
-              <div style="font-size:.78rem;color:var(--muted);font-style:italic">Place libre</div>
-            </div>
-          `).join('')}
-        </div>
-      ` : ''}
-
-      <!-- Dietary summary -->
-      ${tableGuests.some(g => g.diet !== 'standard') ? `
-        <div style="margin-top:1rem;padding:.6rem .8rem;background:var(--ivory-2);border-radius:var(--radius);font-size:.75rem">
-          <div style="font-weight:500;margin-bottom:.3rem;color:var(--charcoal-2)">Régimes alimentaires</div>
-          ${Object.entries(tableGuests.filter(g => g.diet !== 'standard').reduce((acc, g) => { acc[g.diet] = (acc[g.diet] || 0) + 1; return acc; }, {})).map(([diet, count]) => `
-            <div style="color:var(--charcoal-2)">${dietLabels[diet] || ''} ${diet} × ${count}</div>
-          `).join('')}
-        </div>
-      ` : ''}
-    </div>
-  `;
-}
-
-function seatingZoomIn() {
-  seatingZoom = Math.min(1.5, seatingZoom + 0.1);
-  const canvas = document.getElementById('seating-canvas');
-  if (canvas) canvas.style.transform = `scale(${seatingZoom})`;
-}
-
-function seatingZoomOut() {
-  seatingZoom = Math.max(0.4, seatingZoom - 0.1);
-  const canvas = document.getElementById('seating-canvas');
-  if (canvas) canvas.style.transform = `scale(${seatingZoom})`;
-}
-
-function seatingToggleSnap() {
-  seatingSnap = !seatingSnap;
-  const btn = document.getElementById('btn-snap');
-  if (btn) {
-    btn.style.background = seatingSnap ? 'var(--ivory-2)' : '';
-    btn.style.borderColor = seatingSnap ? 'var(--border-hover)' : '';
-    btn.style.fontWeight = seatingSnap ? '500' : '';
-  }
-  const canvas = document.getElementById('seating-canvas');
-  if (!canvas) return;
-  // rebuild grid
-  const existing = canvas.querySelector('.snap-grid');
-  if (existing) existing.remove();
-  if (seatingSnap) {
-    const grid = document.createElement('div');
-    grid.className = 'snap-grid';
-    grid.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:0';
-    grid.innerHTML = buildSnapGrid();
-    canvas.insertBefore(grid, canvas.firstChild);
-  }
 }
 
 function resetSeatOffsets(tableId) {
   const table = state.tables.find(t => t.id === tableId);
   if (!table) return;
-  for (let i = 0; i < table.capacity; i++) {
-    delete state.seatOffsets[tableId + ':' + i];
-  }
+  for (let i = 0; i < table.capacity; i++) delete state.seatOffsets[tableId + ':' + i];
   save();
   refreshSeatingCanvas();
   renderSeatingPanel(tableId);
@@ -983,21 +899,18 @@ function initSeatingDrag() {
     document.addEventListener('mouseup', onUp);
   });
 
-  // ── Seat drag ───────────────────────────────
+  // ── Seat drag: constrained to table perimeter ─
   document.querySelectorAll('.draggable-seat').forEach(seat => {
     const tableId = seat.dataset.tableId;
     const seatIdx = parseInt(seat.dataset.seatIdx);
     const key = tableId + ':' + seatIdx;
-    let dragging = false, startX, startY, origDx, origDy;
+    let dragging = false, startX, startY;
 
     seat.addEventListener('mousedown', e => {
-      e.stopPropagation(); // prevent table drag
+      e.stopPropagation();
       dragging = true;
       startX = e.clientX;
       startY = e.clientY;
-      const cur = state.seatOffsets[key] || { dx: 0, dy: 0 };
-      origDx = cur.dx;
-      origDy = cur.dy;
       seat.style.cursor = 'grabbing';
       seat.style.zIndex = 60;
       e.preventDefault();
@@ -1005,25 +918,29 @@ function initSeatingDrag() {
 
     const onMove = e => {
       if (!dragging) return;
-      const rawDx = (e.clientX - startX) / seatingZoom;
-      const rawDy = (e.clientY - startY) / seatingZoom;
-      const newDx = origDx + rawDx;
-      const newDy = origDy + rawDy;
-
-      // Apply offset to seat visually
       const table = state.tables.find(t => t.id === tableId);
       if (!table) return;
+
       const isRound = table.shape === 'ronde';
       const isLong = table.shape === 'longue';
       const tableW = isLong ? 240 : isRound ? 130 : 170;
       const tableH = isLong ? 75 : isRound ? 130 : 105;
       const pad = 32;
-      const def = defaultSeatPos(seatIdx, table.capacity, tableW, tableH, isRound, isLong, pad);
-      seat.style.left = (def.sx + newDx) + 'px';
-      seat.style.top = (def.sy + newDy) + 'px';
 
-      // Update anchor line
-      updateAnchorLine(seat, def, newDx, newDy);
+      // Mouse position relative to the node (accounting for zoom)
+      const node = seat.closest('.seating-node');
+      const nodeRect = node.getBoundingClientRect();
+      const mouseX = (e.clientX - nodeRect.left) / seatingZoom;
+      const mouseY = (e.clientY - nodeRect.top) / seatingZoom;
+
+      // Clamp to perimeter
+      const pos = clampSeatToPerimeter(mouseX, mouseY, tableW, tableH, isRound, isLong, pad);
+
+      seat.style.left = Math.round(pos.sx) + 'px';
+      seat.style.top = Math.round(pos.sy) + 'px';
+
+      // Save angle continuously so release works even if mouseup misses
+      state.seatOffsets[key] = { angle: pos.angle };
     };
 
     const onUp = e => {
@@ -1031,51 +948,23 @@ function initSeatingDrag() {
       dragging = false;
       seat.style.cursor = 'grab';
       seat.style.zIndex = 4;
-      const rawDx = (e.clientX - startX) / seatingZoom;
-      const rawDy = (e.clientY - startY) / seatingZoom;
-      state.seatOffsets[key] = { dx: origDx + rawDx, dy: origDy + rawDy };
+      // Final position already saved in onMove
       save();
     };
 
-    // Double-click to reset seat to default position
+    // Double-click to reset this seat
     seat.addEventListener('dblclick', e => {
       e.stopPropagation();
       delete state.seatOffsets[key];
       save();
       refreshSeatingCanvas();
       if (seatingSelectedId) renderSeatingPanel(seatingSelectedId);
+      toast('Siège remis à sa position par défaut.');
     });
 
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
-}
-
-function updateAnchorLine(seat, def, newDx, newDy) {
-  // Find or create anchor line preceding the seat
-  const seatSize = 26;
-  const defX = def.sx + seatSize / 2;
-  const defY = def.sy + seatSize / 2;
-  const curX = def.sx + newDx + seatSize / 2;
-  const curY = def.sy + newDy + seatSize / 2;
-  const len = Math.hypot(curX - defX, curY - defY);
-  const angle = Math.atan2(curY - defY, curX - defX) * 180 / Math.PI;
-
-  let line = seat.previousElementSibling;
-  if (!line || !line.style.transformOrigin) {
-    line = document.createElement('div');
-    line.style.cssText = 'position:absolute;height:1px;background:rgba(193,155,94,.4);transform-origin:0 50%;pointer-events:none;z-index:1';
-    seat.parentNode.insertBefore(line, seat);
-  }
-  if (len < 2) {
-    line.style.display = 'none';
-  } else {
-    line.style.display = '';
-    line.style.left = defX + 'px';
-    line.style.top = defY + 'px';
-    line.style.width = len + 'px';
-    line.style.transform = 'rotate(' + angle + 'deg)';
-  }
 }
 
 function buildSeatingListView() {
