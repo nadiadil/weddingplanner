@@ -34,24 +34,36 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+// ─── FIRESTORE PERSISTENCE ────────────────────
+let _saveTimeout = null;
+
 function save() {
-  localStorage.setItem('adil-nadiya-wedding', JSON.stringify({
-    guests: state.guests,
-    tables: state.tables,
-    menuSections: state.menuSections,
-    budget: state.budget,
-    tasks: state.tasks,
-    events: state.events,
-    tablePositions: state.tablePositions,
-    seatOffsets: state.seatOffsets,
-  }));
+  // Debounce: wait 600ms after last change before writing to Firestore
+  if (_saveTimeout) clearTimeout(_saveTimeout);
+  _saveTimeout = setTimeout(() => {
+    if (!window._fb) return;
+    const { setDoc, DOC_REF } = window._fb;
+    const payload = {
+      guests: state.guests,
+      tables: state.tables,
+      menuSections: state.menuSections,
+      budget: state.budget,
+      tasks: state.tasks,
+      events: state.events,
+      tablePositions: state.tablePositions,
+      seatOffsets: state.seatOffsets,
+    };
+    setDoc(DOC_REF, payload).catch(err => {
+      console.error('Firestore save error:', err);
+      toast('Erreur de sauvegarde.');
+    });
+  }, 600);
 }
 
-function load() {
-  const raw = localStorage.getItem('adil-nadiya-wedding');
-  if (!raw) return;
-  const data = JSON.parse(raw);
-  Object.assign(state, data);
+function applyRemoteData(data) {
+  if (!data) return;
+  const keys = ['guests','tables','menuSections','budget','tasks','events','tablePositions','seatOffsets'];
+  keys.forEach(k => { if (data[k] !== undefined) state[k] = data[k]; });
   if (!state.tablePositions) state.tablePositions = {};
   if (!state.seatOffsets) state.seatOffsets = {};
 }
@@ -1689,11 +1701,11 @@ function exportPDF() {
 }
 
 // ─── INIT ─────────────────────────────────────
-function init() {
-  load();
-  updateCountdown();
-  setInterval(updateCountdown, 60000);
+// Called by Firebase module once auth is confirmed
+window._fbReady = function(user) {
+  const { onSnapshot, DOC_REF } = window._fb;
 
+  // Setup nav links
   document.querySelectorAll('.nav-link').forEach(link => {
     link.addEventListener('click', e => {
       e.preventDefault();
@@ -1701,7 +1713,48 @@ function init() {
     });
   });
 
-  renderDashboard();
-}
+  updateCountdown();
+  setInterval(updateCountdown, 60000);
 
-document.addEventListener('DOMContentLoaded', init);
+  // Add logout button to sidebar
+  const sidebarFooter = document.querySelector('.sidebar-footer');
+  if (sidebarFooter && !document.getElementById('logout-btn')) {
+    const logoutBtn = document.createElement('button');
+    logoutBtn.id = 'logout-btn';
+    logoutBtn.className = 'logout-btn';
+    logoutBtn.innerHTML = `<svg viewBox="0 0 20 20"><path d="M13 3h4v14h-4M9 14l4-4-4-4M13 10H5"/></svg> Se déconnecter`;
+    logoutBtn.onclick = () => {
+      if (confirm('Se déconnecter ?')) {
+        window._fb.signOut(window._fb.auth).then(() => {
+          document.getElementById('login-screen').style.display = 'flex';
+        });
+      }
+    };
+    sidebarFooter.appendChild(logoutBtn);
+  }
+
+  // Listen to Firestore in real time
+  let firstLoad = true;
+  onSnapshot(DOC_REF, (snap) => {
+    if (snap.exists()) {
+      applyRemoteData(snap.data());
+    } else {
+      // First time: push default state
+      save();
+    }
+    if (firstLoad) {
+      firstLoad = false;
+      renderDashboard();
+    } else {
+      // Remote update: refresh current page
+      const activePage = document.querySelector('.page.active');
+      if (activePage) {
+        const pageId = activePage.id.replace('page-', '');
+        renderPage(pageId);
+      }
+    }
+  }, err => {
+    console.error('Firestore listener error:', err);
+    toast('Erreur de connexion à la base de données.');
+  });
+};

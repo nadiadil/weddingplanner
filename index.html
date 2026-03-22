@@ -303,6 +303,95 @@
 
   <div class="toast" id="toast"></div>
 
+  <!-- Login screen -->
+  <div id="login-screen">
+    <div class="login-card">
+      <div class="login-monogram">A<span>&</span>N</div>
+      <div class="login-title">Adil &amp; Nadiya</div>
+      <div class="login-subtitle">26 · Juin · 2026</div>
+      <div class="login-ornament">✦ ── ✦ ── ✦</div>
+      <div id="login-error" class="login-error"></div>
+      <div class="login-form">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="login-email" placeholder="votre@email.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label>Mot de passe</label>
+          <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button class="login-btn" id="login-btn" onclick="doLogin()">
+          <span id="login-btn-text">Se connecter</span>
+          <svg id="login-spinner" viewBox="0 0 24 24" style="display:none;width:18px;height:18px;animation:spin 1s linear infinite"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="31.4" stroke-dashoffset="10"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK (module) -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+    import { getFirestore, doc, setDoc, onSnapshot, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCcXdEPwM6pc1oCD0QdzChMY2NE5Z5z6og",
+      authDomain: "nadiyadil-cd0af.firebaseapp.com",
+      projectId: "nadiyadil-cd0af",
+      storageBucket: "nadiyadil-cd0af.firebasestorage.app",
+      messagingSenderId: "498638131865",
+      appId: "1:498638131865:web:1f5a89984d7cf4aac51e08"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const DOC_REF = doc(db, 'wedding', 'data');
+
+    // Expose Firebase internals to app.js via global
+    window._fb = { auth, db, doc, setDoc, onSnapshot, getDoc, DOC_REF, signInWithEmailAndPassword, signOut };
+
+    // Watch auth state
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        document.getElementById('login-screen').style.display = 'none';
+        if (window._fbReady) window._fbReady(user);
+      } else {
+        document.getElementById('login-screen').style.display = 'flex';
+      }
+    });
+
+    // Login
+    window.doLogin = async function() {
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      const btn = document.getElementById('login-btn');
+      const btnText = document.getElementById('login-btn-text');
+      const spinner = document.getElementById('login-spinner');
+      const error = document.getElementById('login-error');
+
+      if (!email || !password) { error.textContent = 'Veuillez remplir tous les champs.'; error.style.display = 'block'; return; }
+      btn.disabled = true; btnText.style.display = 'none'; spinner.style.display = 'block'; error.style.display = 'none';
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch(e) {
+        const msgs = {
+          'auth/invalid-credential': 'Email ou mot de passe incorrect.',
+          'auth/user-not-found': 'Aucun compte trouve.',
+          'auth/wrong-password': 'Mot de passe incorrect.',
+          'auth/too-many-requests': 'Trop de tentatives. Reessayez plus tard.',
+        };
+        error.textContent = msgs[e.code] || ('Erreur : ' + e.code);
+        error.style.display = 'block';
+        btn.disabled = false; btnText.style.display = 'block'; spinner.style.display = 'none';
+      }
+    };
+
+    document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') window.doLogin(); });
+    document.getElementById('login-email').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('login-password').focus(); });
+  </script>
+
   <script src="app.js"></script>
 </body>
 </html>
