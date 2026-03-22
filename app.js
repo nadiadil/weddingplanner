@@ -3135,30 +3135,48 @@ function buildMonthHTML(year, month) {
 }
 
 function selectCalDay(dateStr) {
-  calSelectedDate = calSelectedDate === dateStr ? null : dateStr;
-  // Re-render both months to update selection highlight
-  const pg = document.getElementById('page-calendrier');
-  const bodyDiv = pg.querySelector('.page-body');
-  if (!bodyDiv) { renderCalendrier(); return; }
+  const closing = calSelectedDate === dateStr;
+  calSelectedDate = closing ? null : dateStr;
 
-  // Update grid cells highlight without full re-render
-  bodyDiv.querySelectorAll('[onclick^="selectCalDay"]').forEach(cell => {
-    const cellDate = cell.getAttribute('onclick').match(/'([^']+)'/)?.[1];
-    if (!cellDate) return;
-    const isWedding = cellDate.endsWith('-06-26');
-    const isSelected = calSelectedDate === cellDate;
-    cell.style.border = isSelected ? '2px solid var(--wine)' : '1px solid var(--border)';
-    cell.style.background = isSelected ? 'var(--wine-pale)' : isWedding ? 'rgba(107,45,62,.05)' : 'white';
-    cell.style.boxShadow = isSelected ? '0 2px 8px rgba(107,45,62,.15)' : 'none';
+  // Update cell highlights
+  document.querySelectorAll('[onclick^="selectCalDay"]').forEach(cell => {
+    const m = cell.getAttribute('onclick').match(/'([^']+)'/);
+    if (!m) return;
+    const cd = m[1];
+    const isWedding = cd.endsWith('-06-26');
+    const isSel = calSelectedDate === cd;
+    cell.style.border = isSel ? '2px solid var(--wine)' : '1px solid var(--border)';
+    cell.style.background = isSel ? 'var(--wine-pale)' : isWedding ? 'rgba(107,45,62,.05)' : 'white';
+    cell.style.boxShadow = isSel ? '0 2px 8px rgba(107,45,62,.15)' : 'none';
   });
 
-  renderDayPanel();
+  // Remove any existing inline panel
+  document.querySelectorAll('.cal-inline-panel').forEach(p => p.remove());
+
+  if (!calSelectedDate) return;
+
+  // Find which month container the clicked cell belongs to
+  const clickedCell = [...document.querySelectorAll('[onclick^="selectCalDay"]')]
+    .find(el => el.getAttribute('onclick').includes("'" + dateStr + "'"));
+  const monthContainer = clickedCell?.closest('[style*="border-radius:var(--radius-lg)"]');
+
+  // Build inline panel
+  const panel = document.createElement('div');
+  panel.className = 'cal-inline-panel';
+  panel.style.cssText = 'margin-top:.6rem';
+  if (monthContainer) {
+    monthContainer.insertAdjacentElement('afterend', panel);
+  } else {
+    document.getElementById('cal-day-panel')?.replaceWith(panel);
+  }
+
+  renderDayPanel(panel);
 }
 
-function renderDayPanel() {
-  const panel = document.getElementById('cal-day-panel');
+function renderDayPanel(targetEl) {
+  // Find or use target
+  let panel = targetEl || document.querySelector('.cal-inline-panel') || document.getElementById('cal-day-panel');
   if (!panel) return;
-
   if (!calSelectedDate) { panel.style.display = 'none'; return; }
 
   const catColors = { rdv:'var(--wine)', deadline:'#C0392B', paiement:'var(--sage)', essayage:'var(--gold)', réunion:'#4A7C9F', autre:'var(--muted)' };
@@ -3166,7 +3184,6 @@ function renderDayPanel() {
     .filter(r => r.date === calSelectedDate)
     .sort((a,b) => (a.heure||'99:99').localeCompare(b.heure||'99:99'));
 
-  // Parse date for display
   const [y,m,d] = calSelectedDate.split('-').map(Number);
   const dateObj = new Date(y, m-1, d);
   const dayNames = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
@@ -3174,9 +3191,16 @@ function renderDayPanel() {
   const dateLabel = dayNames[dateObj.getDay()] + ' ' + d + ' ' + monthNames[m-1] + ' ' + y;
   const isWedding = calSelectedDate === '2026-06-26';
 
-  const HOURS = ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
+  // Only show hours that have events + 1 hour before/after
   const withHour = dayRappels.filter(r => r.heure);
   const withoutHour = dayRappels.filter(r => !r.heure);
+  const usedHours = [...new Set(withHour.map(r => parseInt(r.heure)))].sort((a,b)=>a-b);
+  const HOURS = usedHours.length > 0
+    ? Array.from({length: (usedHours[usedHours.length-1] - usedHours[0] + 3)}, (_,i) => {
+        const h = usedHours[0] - 1 + i;
+        return h >= 0 && h <= 23 ? String(h).padStart(2,'0') + ':00' : null;
+      }).filter(Boolean)
+    : [];
 
   panel.style.display = 'block';
   panel.innerHTML = `
@@ -3194,52 +3218,125 @@ function renderDayPanel() {
       </div>
     </div>
 
-    <div style="display:flex;min-height:200px">
-      <!-- Hour column -->
-      <div style="border-right:1px solid var(--border);min-width:72px;position:relative">
-        ${dayRappels.length === 0 ? '' : HOURS.map(h => `
-          <div style="display:flex;align-items:flex-start;height:52px;border-bottom:1px solid rgba(44,37,32,.05);padding:.3rem .5rem;gap:.2rem">
-            <span style="font-size:.68rem;color:var(--muted);font-weight:400;white-space:nowrap">${h}</span>
-          </div>`).join('')}
-        ${dayRappels.length === 0 ? '<div style="padding:2rem 1rem;text-align:center;color:var(--muted)"><div style="font-size:1.5rem;opacity:.3;margin-bottom:.4rem">📅</div><div style="font-size:.8rem">Aucun rappel</div><div style="font-size:.72rem;margin-top:.3rem">Cliquez sur « Ajouter »</div></div>' : ''}
-      </div>
-
-      <!-- Events column -->
-      <div style="flex:1;position:relative;min-height:${HOURS.length * 52}px">
-        ${dayRappels.length === 0 ? '' : HOURS.map((h, hi) => {
+    <div style="padding:.6rem 1rem;display:flex;flex-direction:column;gap:.3rem;min-height:60px">
+      ${dayRappels.length === 0 ? `
+        <div style="text-align:center;padding:1rem;color:var(--muted);font-size:.82rem">
+          Aucun rappel ce jour · <span style="color:var(--gold);cursor:pointer" onclick="openRappelModal(null,'${calSelectedDate}')">Ajouter</span>
+        </div>` :
+        [...HOURS.map(h => {
           const hNum = parseInt(h);
           const slotRappels = withHour.filter(r => parseInt(r.heure) === hNum);
-          return `<div style="height:52px;border-bottom:1px solid rgba(44,37,32,.05);padding:.3rem .6rem;display:flex;flex-direction:column;gap:.2rem">
-            ${slotRappels.map(r => {
-              const rPids = getPersonIds(r);
-              return `<div onclick="openRappelModal('${r.id}')" style="background:${catColors[r.category]||'var(--muted)'};color:white;border-radius:5px;padding:.25rem .6rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;transition:opacity .15s;font-size:.78rem" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
-                <span style="font-weight:500;flex-shrink:0">${r.heure.slice(0,5)}</span>
+          if (slotRappels.length === 0) return `
+            <div style="display:flex;gap:.6rem;align-items:center;padding:.2rem 0;opacity:.35">
+              <span style="font-size:.68rem;color:var(--muted);min-width:40px;text-align:right;flex-shrink:0">${h}</span>
+              <div style="flex:1;height:1px;background:var(--border)"></div>
+            </div>`;
+          return slotRappels.map(r => {
+            const rPids = getPersonIds(r);
+            return `<div style="display:flex;gap:.6rem;align-items:center">
+              <span style="font-size:.7rem;font-weight:500;color:var(--gold);min-width:40px;text-align:right;flex-shrink:0">${r.heure.slice(0,5)}</span>
+              <div onclick="openRappelModal('${r.id}')" style="flex:1;background:${catColors[r.category]||'var(--muted)'};color:white;border-radius:5px;padding:.3rem .7rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.8rem;transition:opacity .15s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
                 <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.name}</span>
                 ${rPids.length > 0 ? renderPersonAvatars(rPids) : ''}
-                <button onclick="event.stopPropagation();deleteRappel('${r.id}')" style="background:rgba(255,255,255,.2);border:none;color:white;border-radius:3px;padding:0 .3rem;cursor:pointer;font-size:.7rem;flex-shrink:0;line-height:1.4">×</button>
-              </div>`;
-            }).join('')}
-          </div>`;
-        }).join('')}
-        ${withoutHour.length > 0 ? `
-          <div style="padding:.6rem .8rem;border-top:1px solid var(--border);background:var(--ivory)">
-            <div style="font-size:.65rem;color:var(--muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.08em">Sans heure</div>
-            <div style="display:flex;flex-direction:column;gap:.3rem">
-              ${withoutHour.map(r => {
-                const rPids = getPersonIds(r);
-                return `<div onclick="openRappelModal('${r.id}')" style="background:${catColors[r.category]||'var(--muted)'};color:white;border-radius:5px;padding:.25rem .6rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.78rem">
-                  <span style="flex:1">${r.name}</span>
-                  ${rPids.length > 0 ? renderPersonAvatars(rPids) : ''}
-                  <button onclick="event.stopPropagation();deleteRappel('${r.id}')" style="background:rgba(255,255,255,.2);border:none;color:white;border-radius:3px;padding:0 .3rem;cursor:pointer;font-size:.7rem;line-height:1.4">×</button>
-                </div>`;
-              }).join('')}
-            </div>
-          </div>` : ''}
-      </div>
+                <span class="badge ${r.category==='deadline'?'badge-red':'badge-gray'}" style="font-size:.6rem;background:rgba(255,255,255,.2);color:white;border-color:transparent">${r.category}</span>
+                <button onclick="event.stopPropagation();deleteRappel('${r.id}')" style="background:rgba(255,255,255,.15);border:none;color:white;border-radius:3px;padding:0 .35rem;cursor:pointer;font-size:.72rem;line-height:1.5">×</button>
+              </div>
+            </div>`;
+          }).join('');
+        }),
+        withoutHour.length > 0 ? [`
+          <div style="border-top:1px dashed var(--border);margin:.2rem 0"></div>
+          ${withoutHour.map(r => {
+            const rPids = getPersonIds(r);
+            return '<div style="display:flex;gap:.6rem;align-items:center"><span style="font-size:.68rem;color:var(--muted);min-width:40px;text-align:right;flex-shrink:0">—</span><div onclick="openRappelModal('' + r.id + '')" style="flex:1;background:' + (catColors[r.category]||'var(--muted)') + ';color:white;border-radius:5px;padding:.3rem .7rem;cursor:pointer;display:flex;align-items:center;gap:.5rem;font-size:.8rem"><span style="flex:1">' + r.name + '</span>' + (rPids.length>0?renderPersonAvatars(rPids):'') + '<button onclick="event.stopPropagation();deleteRappel('' + r.id + '')" style="background:rgba(255,255,255,.15);border:none;color:white;border-radius:3px;padding:0 .35rem;cursor:pointer;font-size:.72rem;line-height:1.5">×</button></div></div>';
+          }).join('')}`] : []
+        ].flat().join('')}
     </div>`;
 
-  // Smooth scroll to panel
   setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+}
+
+
+let _editingRappelId = null;
+
+function openRappelModal(id = null, defaultDate = null) {
+  _editingRappelId = id;
+  const r = id ? (state.rappels||[]).find(x => x.id === id) : null;
+  const modal = document.getElementById('rappel-modal');
+  const overlay = document.getElementById('rappel-overlay');
+  if (!modal || !overlay) { renderCalendrier(); setTimeout(() => openRappelModal(id, defaultDate), 80); return; }
+
+  document.getElementById('rappel-modal-title').textContent = id ? 'Modifier le rappel' : 'Nouveau rappel';
+  document.getElementById('rappel-name').value = r?.name || '';
+  document.getElementById('rappel-date').value = r?.date || defaultDate || '';
+  document.getElementById('rappel-heure').value = r?.heure || '';
+  document.getElementById('rappel-category').value = r?.category || 'rdv';
+  document.getElementById('rappel-notes').value = r?.notes || '';
+
+  modal.style.display = 'flex';
+  overlay.style.display = 'block';
+
+  const rappelPersonIds = r ? getPersonIds(r) : [];
+  setTimeout(() => {
+    initPickerSelection('rappel-person', rappelPersonIds);
+    document.getElementById('rappel-name').focus();
+  }, 30);
+
+  if (id) {
+    // Add delete button if editing
+    const footer = modal.querySelector('.modal-footer');
+    if (footer && !footer.querySelector('.btn-delete-rappel')) {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-ghost btn-delete-rappel';
+      delBtn.style.cssText = 'color:#C0392B;border-color:rgba(192,57,43,.3);margin-right:auto';
+      delBtn.textContent = 'Supprimer';
+      delBtn.onclick = () => { closeRappelModal(); deleteRappel(id); };
+      footer.insertBefore(delBtn, footer.firstChild);
+    }
+  } else {
+    const delBtn = modal.querySelector('.btn-delete-rappel');
+    if (delBtn) delBtn.remove();
+  }
+}
+
+function closeRappelModal() {
+  const modal = document.getElementById('rappel-modal');
+  const overlay = document.getElementById('rappel-overlay');
+  if (modal) modal.style.display = 'none';
+  if (overlay) overlay.style.display = 'none';
+}
+
+function saveRappel() {
+  const name = document.getElementById('rappel-name').value.trim();
+  const date = document.getElementById('rappel-date').value;
+  if (!name || !date) { toast('Nom et date requis.'); return; }
+  const rappel = {
+    id: _editingRappelId || uid(),
+    name, date,
+    heure: document.getElementById('rappel-heure').value,
+    category: document.getElementById('rappel-category').value,
+    personIds: getPickerValues('rappel-person'),
+    notes: document.getElementById('rappel-notes').value.trim(),
+  };
+  if (_editingRappelId) {
+    const idx = state.rappels.findIndex(r => r.id === _editingRappelId);
+    state.rappels[idx] = rappel;
+  } else {
+    state.rappels.push(rappel);
+  }
+  save();
+  closeRappelModal();
+  toast(_editingRappelId ? 'Rappel mis à jour !' : 'Rappel ajouté !');
+  renderCalendrier();
+  setTimeout(renderDayPanel, 50);
+}
+
+function deleteRappel(id) {
+  state.rappels = state.rappels.filter(r => r.id !== id);
+  save();
+  renderCalendrier();
+  setTimeout(renderDayPanel, 50);
+  toast('Rappel supprimé.');
 }
 
 
