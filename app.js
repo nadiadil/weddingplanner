@@ -1302,84 +1302,118 @@ function renderMenu() {
   pg.innerHTML = `
     <div class="page-header">
       <div>
-        <div class="page-title">Menus</div>
-        <div class="page-subtitle">${state.menus.length} menu${state.menus.length > 1 ? 's' : ''}</div>
+        <div class="page-title">Cartes</div>
+        <div class="page-subtitle">${state.menus.length} carte${state.menus.length > 1 ? 's' : ''}</div>
       </div>
       <div class="page-actions">
         <button class="btn btn-primary" onclick="addNewMenu()">
           <svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
-          Nouveau menu
+          Nouvelle carte
         </button>
       </div>
     </div>
-    <div class="page-body">
-      ${state.menus.map((menu, mi) => `
-        <div class="menu-card" style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:2rem;box-shadow:var(--shadow);overflow:hidden">
-          <!-- Menu header bar -->
-          <div style="background:var(--charcoal);padding:1rem 1.5rem;display:flex;align-items:center;gap:.8rem">
-            <input type="text" value="${menu.name}" onchange="renameMenu('${menu.id}', this.value)"
-              style="background:transparent;border:none;color:white;font-family:var(--font-display);font-size:1.2rem;font-weight:300;flex:1;outline:none;letter-spacing:.02em"
-              placeholder="Nom du menu...">
-            <input type="text" value="${menu.lang}" onchange="setMenuLang('${menu.id}', this.value)"
-              style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:var(--gold-light);border-radius:4px;width:52px;text-align:center;font-size:.8rem;padding:.2rem .4rem;outline:none;font-family:var(--font-body);letter-spacing:.1em"
-              placeholder="FR" title="Langue">
-            <button class="btn btn-sm btn-icon" style="color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15)" onclick="addMenuSection('${menu.id}')" title="Ajouter une rubrique">
-              <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M10 4v12M4 10h12" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"/></svg>
-            </button>
-            ${state.menus.length > 1 ? `<button class="btn btn-sm btn-icon" style="color:#E8A0A0;border-color:rgba(255,255,255,.15)" onclick="deleteMenu('${menu.id}')" title="Supprimer ce menu">
-              <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
-            </button>` : ''}
-          </div>
-
-          <!-- Sections -->
-          ${(menu.sections || []).map((section, si) => `
-            <div style="border-bottom:1px solid var(--border);padding:0">
-              <!-- Section title row -->
-              <div style="display:flex;align-items:center;gap:.6rem;padding:.7rem 1.5rem;background:var(--ivory-2);border-bottom:1px solid var(--border)">
-                <input type="text" value="${section.name}" onchange="renameMenuSection('${menu.id}','${section.id}',this.value)"
-                  style="flex:1;background:transparent;border:none;font-family:var(--font-display);font-size:1rem;font-weight:400;color:var(--charcoal);outline:none"
-                  placeholder="Nom de la rubrique...">
-                <button onclick="addMenuItem('${menu.id}','${section.id}')" class="btn btn-sm btn-ghost" style="font-size:.72rem;flex-shrink:0">+ Ajouter un plat</button>
-                ${(menu.sections||[]).length > 1 ? `<button onclick="deleteMenuSection('${menu.id}','${section.id}')" class="btn btn-sm btn-icon" style="color:var(--muted);flex-shrink:0">
-                  <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
-                </button>` : ''}
-              </div>
-
-              <!-- Items -->
-              ${section.items.length === 0 ? '<div style="padding:.6rem 1.5rem;font-size:.82rem;color:var(--muted);font-style:italic">Aucun plat · cliquez sur « Ajouter un plat »</div>' :
-                section.items.map((item, ii) => `
-                  <div style="display:grid;grid-template-columns:1fr 2fr auto auto auto;align-items:center;gap:.6rem;padding:.55rem 1.5rem;border-bottom:1px solid var(--border);transition:background .15s" onmouseover="this.style.background='var(--ivory)'" onmouseout="this.style.background=''">
-                    <input type="text" value="${item.name}" onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'name',this.value)"
-                      style="border:none;border-bottom:1px solid transparent;font-size:.9rem;font-weight:500;color:var(--charcoal);background:transparent;outline:none;padding:.1rem 0;font-family:var(--font-body)"
-                      onmouseover="this.style.borderBottomColor='var(--border-hover)'" onmouseout="this.style.borderBottomColor='transparent'"
-                      onblur="this.style.borderBottomColor='transparent'" onfocus="this.style.borderBottomColor='var(--gold)'"
-                      placeholder="Nom du plat">
-                    <input type="text" value="${item.desc||''}" onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'desc',this.value)"
-                      style="border:none;border-bottom:1px solid transparent;font-size:.8rem;color:var(--muted);background:transparent;outline:none;padding:.1rem 0;font-family:var(--font-body)"
-                      onmouseover="this.style.borderBottomColor='var(--border-hover)'" onmouseout="this.style.borderBottomColor='transparent'"
-                      onblur="this.style.borderBottomColor='transparent'" onfocus="this.style.borderBottomColor='var(--gold)'"
-                      placeholder="Description, ingrédients...">
-                    <label style="display:flex;align-items:center;gap:.25rem;font-size:.72rem;color:var(--sage);cursor:pointer;white-space:nowrap">
-                      <input type="checkbox" ${item.vege?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'vege',this.checked)" style="accent-color:var(--sage)"> Végé
-                    </label>
-                    <label style="display:flex;align-items:center;gap:.25rem;font-size:.72rem;color:var(--gold);cursor:pointer;white-space:nowrap">
-                      <input type="checkbox" ${item.halal?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'halal',this.checked)" style="accent-color:var(--gold)"> Halal
-                    </label>
-                    <button onclick="deleteMenuItem('${menu.id}','${section.id}',${ii})" class="btn btn-sm btn-icon" style="color:var(--muted)">
-                      <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
-                    </button>
-                  </div>
-                `).join('')}
+    <div style="padding:1.2rem 2rem;height:calc(100vh - 90px);box-sizing:border-box;overflow:hidden">
+      <div id="cards-grid" style="
+        display:grid;
+        grid-template-columns:repeat(3,1fr);
+        grid-template-rows:repeat(2,1fr);
+        gap:1rem;
+        height:100%;
+      ">
+        ${state.menus.slice(0,6).map((menu) => `
+          <div class="menu-card" style="
+            background:white;
+            border:1px solid var(--border);
+            border-radius:var(--radius-lg);
+            box-shadow:var(--shadow);
+            overflow:hidden;
+            display:flex;
+            flex-direction:column;
+            min-height:0;
+          ">
+            <!-- Card header -->
+            <div style="background:var(--charcoal);padding:.6rem 1rem;display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+              <input type="text" value="${menu.name}" onchange="renameMenu('${menu.id}', this.value)"
+                style="background:transparent;border:none;color:white;font-family:var(--font-display);font-size:1rem;font-weight:300;flex:1;outline:none;letter-spacing:.02em;min-width:0"
+                placeholder="Nom de la carte...">
+              <input type="text" value="${menu.lang}" onchange="setMenuLang('${menu.id}', this.value)"
+                style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:var(--gold-light);border-radius:4px;width:40px;text-align:center;font-size:.72rem;padding:.15rem .3rem;outline:none;font-family:var(--font-body);letter-spacing:.1em;flex-shrink:0"
+                placeholder="FR" title="Langue">
+              <!-- PDF export button -->
+              <button onclick="exportCardPDF('${menu.id}')" title="Exporter en PDF"
+                style="background:rgba(193,155,94,.2);border:1px solid rgba(193,155,94,.4);color:var(--gold-light);border-radius:4px;padding:.2rem .5rem;cursor:pointer;font-size:.65rem;font-family:var(--font-body);letter-spacing:.06em;display:flex;align-items:center;gap:.25rem;flex-shrink:0;white-space:nowrap">
+                <svg viewBox="0 0 20 20" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round"><path d="M4 4h8l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M12 4v4h4M10 9v6M7 12l3 3 3-3"/></svg>
+                PDF
+              </button>
+              <button onclick="addMenuSection('${menu.id}')" title="Ajouter une rubrique"
+                style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.5);border-radius:4px;padding:.2rem .4rem;cursor:pointer;font-size:.9rem;line-height:1;flex-shrink:0">+</button>
+              ${state.menus.length > 1 ? `<button onclick="deleteMenu('${menu.id}')" title="Supprimer"
+                style="background:transparent;border:none;color:#E8A0A0;cursor:pointer;font-size:.9rem;padding:.1rem .2rem;flex-shrink:0;line-height:1">×</button>` : ''}
             </div>
-          `).join('')}
-        </div>
-      `).join('')}
+
+            <!-- Card body: scrollable sections -->
+            <div style="flex:1;overflow-y:auto;min-height:0">
+              ${(menu.sections || []).map((section) => `
+                <div style="border-bottom:1px solid var(--border)">
+                  <!-- Section header -->
+                  <div style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--ivory-2);border-bottom:1px solid var(--border)">
+                    <input type="text" value="${section.name}" onchange="renameMenuSection('${menu.id}','${section.id}',this.value)"
+                      style="flex:1;background:transparent;border:none;font-family:var(--font-display);font-size:.85rem;font-weight:400;color:var(--charcoal);outline:none;min-width:0"
+                      placeholder="Rubrique...">
+                    <button onclick="addMenuItem('${menu.id}','${section.id}')"
+                      style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:.72rem;font-family:var(--font-body);white-space:nowrap;padding:0;flex-shrink:0">+ Plat</button>
+                    ${(menu.sections||[]).length > 1 ? `<button onclick="deleteMenuSection('${menu.id}','${section.id}')"
+                      style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0 .1rem;flex-shrink:0">×</button>` : ''}
+                  </div>
+                  <!-- Items -->
+                  ${section.items.length === 0
+                    ? '<div style="padding:.3rem .8rem;font-size:.72rem;color:var(--muted);font-style:italic">Vide — cliquez sur + Plat</div>'
+                    : section.items.map((item, ii) => `
+                      <div style="display:grid;grid-template-columns:1fr 1.4fr auto auto auto;align-items:center;gap:.4rem;padding:.3rem .8rem;border-bottom:1px solid rgba(44,37,32,.05)"
+                        onmouseover="this.style.background='var(--ivory)'" onmouseout="this.style.background=''">
+                        <input type="text" value="${item.name}" oninput="updateMenuItem('${menu.id}','${section.id}',${ii},'name',this.value)"
+                          style="border:none;border-bottom:1px solid transparent;font-size:.78rem;font-weight:500;color:var(--charcoal);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);min-width:0"
+                          onfocus="this.style.borderBottomColor='var(--gold)'" onblur="this.style.borderBottomColor='transparent'"
+                          placeholder="Nom du plat">
+                        <input type="text" value="${item.desc||''}" oninput="updateMenuItem('${menu.id}','${section.id}',${ii},'desc',this.value)"
+                          style="border:none;border-bottom:1px solid transparent;font-size:.72rem;color:var(--muted);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);min-width:0"
+                          onfocus="this.style.borderBottomColor='var(--gold)'" onblur="this.style.borderBottomColor='transparent'"
+                          placeholder="Description...">
+                        <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--sage);cursor:pointer;white-space:nowrap">
+                          <input type="checkbox" ${item.vege?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'vege',this.checked)" style="accent-color:var(--sage);width:11px;height:11px"> V
+                        </label>
+                        <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--gold);cursor:pointer;white-space:nowrap">
+                          <input type="checkbox" ${item.halal?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'halal',this.checked)" style="accent-color:var(--gold);width:11px;height:11px"> H
+                        </label>
+                        <button onclick="deleteMenuItem('${menu.id}','${section.id}',${ii})"
+                          style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0;line-height:1">×</button>
+                      </div>
+                    `).join('')}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+        ${state.menus.length < 6 ? `
+          <div onclick="addNewMenu()" style="
+            border:2px dashed var(--border-hover);
+            border-radius:var(--radius-lg);
+            display:flex;flex-direction:column;align-items:center;justify-content:center;
+            cursor:pointer;color:var(--muted);gap:.5rem;
+            transition:all .2s;min-height:0;
+          " onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--border-hover)';this.style.color='var(--muted)'">
+            <div style="font-size:1.6rem;opacity:.4">+</div>
+            <div style="font-size:.78rem;font-weight:400">Nouvelle carte</div>
+          </div>
+        ` : ''}
+      </div>
     </div>
   `;
 }
 
 function addNewMenu() {
-  state.menus.push({ id: uid(), name: 'Nouveau menu', lang: 'FR', sections: [
+  if (state.menus.length >= 6) { toast('Maximum 6 cartes.'); return; }
+  state.menus.push({ id: uid(), name: 'Nouvelle carte', lang: 'FR', sections: [
     { id: uid(), name: 'Entrées', items: [] },
     { id: uid(), name: 'Plats principaux', items: [] },
     { id: uid(), name: 'Desserts', items: [] },
@@ -1388,10 +1422,11 @@ function addNewMenu() {
 }
 
 function deleteMenu(menuId) {
-  if (!confirm('Supprimer ce menu ?')) return;
+  if (!confirm('Supprimer cette carte ?')) return;
   state.menus = state.menus.filter(m => m.id !== menuId);
   save(); renderMenu();
 }
+
 
 function renameMenu(menuId, name) {
   const m = state.menus.find(m => m.id === menuId);
@@ -1905,6 +1940,297 @@ function updateMarie(key, field, value) {
   if (!state[key]) return;
   state[key][field] = value;
   save();
+}
+
+// ─── EXPORT CARTE PDF ──────────────────────────
+function exportCardPDF(menuId) {
+  const menu = state.menus.find(m => m.id === menuId);
+  if (!menu) return;
+
+  const win = window.open('', '_blank');
+
+  const sectionsHTML = (menu.sections || []).map(section => {
+    if (!section.items || section.items.length === 0) {
+      return `<div class="section">
+        <div class="section-title">${section.name}</div>
+        <div class="empty-section">—</div>
+      </div>`;
+    }
+    const itemsHTML = section.items.map(item => `
+      <div class="item">
+        <div class="item-main">
+          <span class="item-name">${item.name || '—'}</span>
+          ${item.vege || item.halal ? `<span class="item-tags">${item.vege ? '<span class="tag vege">Végé</span>' : ''}${item.halal ? '<span class="tag halal">Halal</span>' : ''}</span>` : ''}
+        </div>
+        ${item.desc ? `<div class="item-desc">${item.desc}</div>` : ''}
+      </div>
+    `).join('');
+    return `<div class="section">
+      <div class="section-title">${section.name}</div>
+      <div class="items">${itemsHTML}</div>
+    </div>`;
+  }).join('');
+
+  win.document.write(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>${menu.name} — Adil & Nadiya</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    body {
+      font-family: 'Jost', sans-serif;
+      background: #F9F5EE;
+      color: #2C2520;
+      width: 210mm;
+      min-height: 297mm;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Card wrapper ── */
+    .card {
+      width: 210mm;
+      min-height: 297mm;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* ── Header ── */
+    .card-header {
+      background: #2C2520;
+      padding: 28px 36px 22px;
+      text-align: center;
+      position: relative;
+    }
+
+    .card-header::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #C19B5E, transparent);
+    }
+
+    .wedding-names {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 32pt;
+      font-weight: 300;
+      color: white;
+      letter-spacing: .04em;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .wedding-names em {
+      color: #D4B483;
+      font-style: italic;
+    }
+
+    .wedding-date {
+      font-size: 8pt;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.45);
+      font-weight: 300;
+    }
+
+    .card-title-bar {
+      background: #F2EBE0;
+      border-bottom: 1px solid #E8DDD0;
+      padding: 10px 36px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 16pt;
+      font-weight: 400;
+      color: #6B2D3E;
+      letter-spacing: .02em;
+    }
+
+    .card-lang {
+      font-size: 8pt;
+      letter-spacing: .18em;
+      color: #C19B5E;
+      font-weight: 500;
+      text-transform: uppercase;
+      background: rgba(193,155,94,.1);
+      border: 1px solid rgba(193,155,94,.3);
+      border-radius: 3px;
+      padding: 2px 8px;
+    }
+
+    /* ── Ornament ── */
+    .ornament {
+      text-align: center;
+      color: #C19B5E;
+      font-size: 11pt;
+      letter-spacing: .3em;
+      padding: 10px 0 6px;
+      opacity: .6;
+    }
+
+    /* ── Sections ── */
+    .card-body {
+      flex: 1;
+      padding: 4px 36px 24px;
+    }
+
+    .section {
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 13pt;
+      font-weight: 400;
+      color: #2C2520;
+      border-bottom: 1px solid #E8DDD0;
+      padding-bottom: 4px;
+      margin-bottom: 6px;
+      letter-spacing: .02em;
+    }
+
+    .empty-section {
+      font-size: 9pt;
+      color: #8A7D74;
+      font-style: italic;
+      padding: 2px 0;
+    }
+
+    /* ── Items ── */
+    .item {
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(44,37,32,.05);
+    }
+
+    .item:last-child { border-bottom: none; }
+
+    .item-main {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .item-name {
+      font-size: 10.5pt;
+      font-weight: 400;
+      color: #2C2520;
+      flex: 1;
+    }
+
+    .item-desc {
+      font-size: 8.5pt;
+      color: #8A7D74;
+      font-style: italic;
+      margin-top: 1px;
+      padding-left: 0;
+    }
+
+    .item-tags {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .tag {
+      font-size: 7pt;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 500;
+      letter-spacing: .04em;
+      font-style: normal;
+    }
+
+    .tag.vege {
+      background: #EDF2EB;
+      color: #7A8C6E;
+      border: 1px solid #9FAF94;
+    }
+
+    .tag.halal {
+      background: #FAF3E8;
+      color: #C19B5E;
+      border: 1px solid #D4B483;
+    }
+
+    /* ── Footer ── */
+    .card-footer {
+      border-top: 1px solid #E8DDD0;
+      padding: 10px 36px;
+      text-align: center;
+      background: #F9F5EE;
+    }
+
+    .footer-ornament {
+      color: #C19B5E;
+      font-size: 9pt;
+      letter-spacing: .25em;
+      opacity: .5;
+    }
+
+    /* ── Print button ── */
+    .print-btn {
+      display: block;
+      margin: 12px auto;
+      padding: 8px 28px;
+      background: #6B2D3E;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 11pt;
+      cursor: pointer;
+      font-family: 'Jost', sans-serif;
+    }
+
+    @media print {
+      .print-btn { display: none; }
+      body { background: white; }
+      .card { min-height: 297mm; }
+    }
+  </style>
+</head>
+<body>
+  <button class="print-btn" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="wedding-names">Adil <em>&</em> Nadiya</div>
+      <div class="wedding-date">26 · Juin · 2026</div>
+    </div>
+
+    <div class="card-title-bar">
+      <div class="card-title">${menu.name}</div>
+      <div class="card-lang">${menu.lang}</div>
+    </div>
+
+    <div class="ornament">✦ ── ✦ ── ✦</div>
+
+    <div class="card-body">
+      ${sectionsHTML}
+    </div>
+
+    <div class="card-footer">
+      <div class="footer-ornament">✦ ── ✦ ── ✦</div>
+    </div>
+  </div>
+</body>
+</html>`);
+  win.document.close();
 }
 
 // ─── EXPORT PDF ────────────────────────────────
