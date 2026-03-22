@@ -45,6 +45,19 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+// Returns all assignable people: mariés first, then guests
+function allPeople() {
+  const mariees = [state.marie1, state.marie2].filter(Boolean);
+  return [...mariees, ...state.guests];
+}
+
+// Find any person by id (guest or marié)
+function findPerson(id) {
+  if (id === 'marie-adil') return state.marie1;
+  if (id === 'marie-nadiya') return state.marie2;
+  return state.guests.find(g => g.id === id) || null;
+}
+
 // ─── FIRESTORE PERSISTENCE ────────────────────
 let _saveTimeout = null;
 
@@ -540,14 +553,14 @@ let seatingSnap = false;
 function renderSeating() {
   const pg = document.getElementById('page-seating');
   const placedCount = state.tables.reduce((s, t) => s + t.guests.length, 0);
-  const unplaced = state.guests.filter(g => !state.tables.some(t => t.guests.includes(g.id)));
+  const unplaced = allPeople().filter(g => !state.tables.some(t => t.guests.includes(g.id)));
   seatingSelectedId = null;
 
   pg.innerHTML = `
     <div class="page-header">
       <div>
         <div class="page-title">Plan de table</div>
-        <div class="page-subtitle">${state.tables.length} table${state.tables.length > 1 ? 's' : ''} · ${placedCount} / ${state.guests.length} invités placés</div>
+        <div class="page-subtitle">${state.tables.length} table${state.tables.length > 1 ? 's' : ''} · ${placedCount} / ${allPeople().length} personnes placées</div>
       </div>
       <div class="page-actions">
         <button class="btn btn-ghost" onclick="seatingToggleSnap()" id="btn-snap" title="Aligner sur grille">
@@ -651,7 +664,7 @@ function buildSnapGrid() {
 
 function renderTableNode(table) {
   const pos = state.tablePositions[table.id] || autoPosition(table.id);
-  const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
+  const tableGuests = table.guests.map(id => findPerson(id)).filter(Boolean);
   const isRound = table.shape === 'ronde';
   const isLong = table.shape === 'longue';
   const isRect = table.shape === 'rectangulaire';
@@ -940,7 +953,7 @@ function renderSeatingPanel(tableId) {
   const panel = document.getElementById('seating-panel-content');
   if (!panel) return;
 
-  const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
+  const tableGuests = table.guests.map(id => findPerson(id)).filter(Boolean);
   // Also include mariés if assigned
   const mariees = [state.marie1, state.marie2].filter(m => m && table.guests.includes(m.id));
   const allGuests = tableGuests;
@@ -1132,7 +1145,7 @@ function buildSeatingListView() {
   return `<div class="page-body" style="padding-top:1.5rem">
     <div class="seating-grid">
       ${state.tables.map(table => {
-        const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
+        const tableGuests = table.guests.map(id => findPerson(id)).filter(Boolean);
         const empty = table.capacity - tableGuests.length;
         const shapeIcons = { ronde: '⬤', rectangulaire: '▬', longue: '━' };
         return `
@@ -1187,12 +1200,7 @@ function openTableModal(id = null) {
   const currentTableGuests = id ? state.tables.find(t => t.id === id)?.guests || [] : [];
   const list = document.getElementById('guest-assign-list');
   // Include mariés at the top
-  const allPeople = [
-    ...(state.marie1 ? [state.marie1] : []),
-    ...(state.marie2 ? [state.marie2] : []),
-    ...state.guests
-  ];
-  list.innerHTML = allPeople.map(g => {
+  list.innerHTML = allPeople().map(g => {
     const otherTable = state.tables.find(t => t.id !== id && t.guests.includes(g.id));
     const isSelected = currentTableGuests.includes(g.id);
     const isMarie = g.id === 'marie-adil' || g.id === 'marie-nadiya';
