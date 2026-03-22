@@ -8,6 +8,17 @@ const WEDDING_DATE = new Date('2026-06-26T14:00:00');
 const state = {
   guests: [],
   tables: [],
+  marie1: { id: 'marie-adil', firstname: 'Adil', lastname: '', role: 'marié', diet: 'standard', side: 'adil', rsvp: 'confirmé' },
+  marie2: { id: 'marie-nadiya', firstname: 'Nadiya', lastname: '', role: 'mariée', diet: 'standard', side: 'nadiya', rsvp: 'confirmé' },
+  menus: [
+    { id: uid(), name: 'Menu français', lang: 'FR', sections: [
+      { id: 'cocktail', name: 'Cocktail & Amuse-bouches', items: [] },
+      { id: 'entrees', name: 'Entrées', items: [] },
+      { id: 'plats', name: 'Plats principaux', items: [] },
+      { id: 'desserts', name: 'Desserts & Pièce montée', items: [] },
+      { id: 'boissons', name: 'Boissons', items: [] },
+    ]},
+  ],
   menuSections: [
     { id: 'cocktail', name: 'Cocktail & Amuse-bouches', icon: '🥂', items: [] },
     { id: 'entrees', name: 'Entrées', icon: '🥗', items: [] },
@@ -47,11 +58,14 @@ function save() {
       guests: state.guests,
       tables: state.tables,
       menuSections: state.menuSections,
+      menus: state.menus,
       budget: state.budget,
       tasks: state.tasks,
       events: state.events,
       tablePositions: state.tablePositions,
       seatOffsets: state.seatOffsets,
+      marie1: state.marie1,
+      marie2: state.marie2,
     };
     setDoc(DOC_REF, payload).catch(err => {
       console.error('Firestore save error:', err);
@@ -62,10 +76,13 @@ function save() {
 
 function applyRemoteData(data) {
   if (!data) return;
-  const keys = ['guests','tables','menuSections','budget','tasks','events','tablePositions','seatOffsets'];
+  const keys = ['guests','tables','menuSections','budget','tasks','events','tablePositions','seatOffsets','marie1','marie2','menus'];
   keys.forEach(k => { if (data[k] !== undefined) state[k] = data[k]; });
   if (!state.tablePositions) state.tablePositions = {};
   if (!state.seatOffsets) state.seatOffsets = {};
+  if (!state.menus) state.menus = [];
+  if (!state.marie1) state.marie1 = { id: 'marie-adil', firstname: 'Adil', lastname: '', role: 'marié', diet: 'standard', side: 'adil', rsvp: 'confirmé' };
+  if (!state.marie2) state.marie2 = { id: 'marie-nadiya', firstname: 'Nadiya', lastname: '', role: 'mariée', diet: 'standard', side: 'nadiya', rsvp: 'confirmé' };
 }
 
 function toast(msg) {
@@ -167,6 +184,7 @@ function renderPage(page) {
     budget: renderBudget,
     checklist: renderChecklist,
     planning: renderPlanning,
+    maries: renderMaries,
   };
   if (renderers[page]) renderers[page]();
 }
@@ -655,7 +673,7 @@ function renderTableNode(table) {
         ${seats}
 
         <!-- Table surface -->
-        <div style="
+        <div class="seating-table-surface" style="
           position:absolute;
           left:${pad}px;top:${pad}px;
           width:${tableW}px;height:${tableH}px;
@@ -855,6 +873,137 @@ function autoPosition(tableId) {
   return pos;
 }
 
+// ── Selection & Panel ───────────────────────
+
+function seatingSelectTable(e, tableId) {
+  e.stopPropagation();
+  if (seatingSelectedId === tableId) return;
+  seatingSelectedId = tableId;
+  // Update visual without full re-render
+  document.querySelectorAll('.seating-node').forEach(n => {
+    const id = n.dataset.tableId;
+    const surface = n.querySelector('.seating-table-surface');
+    const isNowSelected = id === tableId;
+    n.style.zIndex = isNowSelected ? 20 : 2;
+    if (surface) {
+      surface.style.border = isNowSelected ? '2.5px solid var(--wine)' : '2px solid var(--gold)';
+      surface.style.boxShadow = isNowSelected
+        ? '0 0 0 4px rgba(107,45,62,.12), 0 6px 24px rgba(107,45,62,.18)'
+        : '0 3px 14px rgba(107,45,62,.1)';
+    }
+  });
+  renderSeatingPanel(tableId);
+}
+
+function seatingDeselectAll(e) {
+  if (e.target.closest('.seating-node')) return;
+  seatingSelectedId = null;
+  document.querySelectorAll('.seating-node').forEach(n => {
+    n.style.zIndex = 2;
+    const surface = n.querySelector('.seating-table-surface');
+    if (surface) {
+      surface.style.border = '2px solid var(--gold)';
+      surface.style.boxShadow = '0 3px 14px rgba(107,45,62,.1)';
+    }
+  });
+  const panel = document.getElementById('seating-panel-content');
+  if (panel) panel.innerHTML = seatingEmptyPanel();
+}
+
+function seatingEmptyPanel() {
+  return `<div style="text-align:center;padding:2rem 1rem;color:var(--muted)">
+    <div style="font-size:1.8rem;margin-bottom:.5rem;opacity:.3">🪑</div>
+    <div style="font-family:var(--font-display);font-size:1rem;font-weight:400;color:var(--charcoal-2);margin-bottom:.3rem">Sélectionner une table</div>
+    <div style="font-size:.78rem">Cliquez sur une table pour voir ses détails</div>
+  </div>`;
+}
+
+function refreshSeatingCanvas() {
+  state.tables.forEach(table => {
+    const node = document.querySelector('.seating-node[data-table-id="' + table.id + '"]');
+    if (!node) return;
+    const curLeft = node.style.left;
+    const curTop = node.style.top;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = renderTableNode(table);
+    const newNode = tmp.firstElementChild;
+    newNode.style.left = curLeft;
+    newNode.style.top = curTop;
+    node.parentNode.replaceChild(newNode, node);
+  });
+  initSeatingDrag();
+}
+
+function renderSeatingPanel(tableId) {
+  const table = state.tables.find(t => t.id === tableId);
+  if (!table) return;
+  const panel = document.getElementById('seating-panel-content');
+  if (!panel) return;
+
+  const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
+  // Also include mariés if assigned
+  const mariees = [state.marie1, state.marie2].filter(m => m && table.guests.includes(m.id));
+  const allGuests = tableGuests;
+  const empty = table.capacity - allGuests.length;
+
+  const dietLabels = { végétarien:'🥗', végétalien:'🌱', halal:'☪️', 'sans-gluten':'🌾', 'sans-poisson':'🐟', autre:'⚠️' };
+  const roleLabels = {
+    'invité':'Invité', 'témoin-marié':'Témoin ♂', 'témoin-mariée':'Témoin ♀',
+    'demoiselle-honneur':"Dem. d'honneur", 'garçon-honneur':"Garçon d'honneur",
+    'famille-marié':'Famille Adil', 'famille-mariée':'Famille Nadiya', 'enfant':'Enfant',
+    'marié':'Marié', 'mariée':'Mariée',
+  };
+
+  panel.innerHTML = `
+    <div>
+      <div style="margin-bottom:1rem;padding-bottom:.8rem;border-bottom:1px solid var(--border)">
+        <div style="font-family:var(--font-display);font-size:1.3rem;font-weight:400;color:var(--charcoal);margin-bottom:.25rem">${table.name}</div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+          <span class="badge badge-gray">${table.shape}</span>
+          <span class="badge ${empty === 0 ? 'badge-green' : 'badge-gold'}">${allGuests.length}/${table.capacity} places</span>
+          ${empty > 0 ? '<span class="badge badge-gray">' + empty + ' libre' + (empty > 1 ? 's' : '') + '</span>' : ''}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:.4rem;margin-bottom:.5rem">
+        <button class="btn btn-primary btn-sm" style="flex:1" onclick="openTableModal('${table.id}')">
+          <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M13.5 2.5L17.5 6.5L7 17H3v-4L13.5 2.5z" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Modifier
+        </button>
+        <button class="btn btn-ghost btn-sm" style="color:#C0392B;border-color:rgba(192,57,43,.3)" onclick="deleteTable('${table.id}')">
+          <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;font-size:.72rem;margin-bottom:1rem;color:var(--muted)" onclick="resetSeatOffsets('${table.id}')">
+        <svg viewBox="0 0 20 20" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 4v5h5M16 16v-5h-5M4.09 9A8 8 0 1116 15.91"/></svg>
+        Réinitialiser sièges
+      </button>
+
+      <div style="font-size:.72rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem">Invités (${allGuests.length})</div>
+      ${allGuests.length === 0 ? '<div style="font-size:.8rem;color:var(--muted);font-style:italic;text-align:center;padding:.8rem 0">Aucun invité assigné</div>' :
+        allGuests.map(g => `
+          <div style="display:flex;align-items:center;gap:.5rem;padding:.45rem 0;border-bottom:1px solid var(--border)">
+            <div style="width:26px;height:26px;border-radius:50%;background:${roleColor(g.role)};display:flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:600;color:white;flex-shrink:0">${initials((g.firstname||'') + ' ' + (g.lastname||''))}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.firstname} ${g.lastname}</div>
+              <div style="font-size:.68rem;color:var(--muted)">${roleLabels[g.role]||g.role}${g.diet && g.diet!=='standard' ? ' · '+(dietLabels[g.diet]||'')+'  '+g.diet : ''}</div>
+            </div>
+            ${g.rsvp==='confirmé'?'<span style="color:#3A7D44;font-size:.75rem">✓</span>':g.rsvp==='décliné'?'<span style="color:#C0392B;font-size:.75rem">✗</span>':'<span style="color:var(--muted);font-size:.75rem">⏳</span>'}
+          </div>
+        `).join('')}
+      ${empty > 0 ? Array.from({length: empty}).map(()=>`
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--border)">
+          <div style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--border-hover);flex-shrink:0"></div>
+          <div style="font-size:.78rem;color:var(--muted);font-style:italic">Place libre</div>
+        </div>`).join('') : ''}
+      ${allGuests.some(g=>g.diet&&g.diet!=='standard') ? `
+        <div style="margin-top:1rem;padding:.6rem .8rem;background:var(--ivory-2);border-radius:var(--radius);font-size:.75rem">
+          <div style="font-weight:500;margin-bottom:.3rem;color:var(--charcoal-2)">Régimes alimentaires</div>
+          ${Object.entries(allGuests.filter(g=>g.diet&&g.diet!=='standard').reduce((a,g)=>{a[g.diet]=(a[g.diet]||0)+1;return a},{})).map(([d,c])=>`<div>${dietLabels[d]||''} ${d} × ${c}</div>`).join('')}
+        </div>` : ''}
+    </div>`;
+}
+
 function resetSeatOffsets(tableId) {
   const table = state.tables.find(t => t.id === tableId);
   if (!table) return;
@@ -1037,15 +1186,23 @@ function openTableModal(id = null) {
 
   const currentTableGuests = id ? state.tables.find(t => t.id === id)?.guests || [] : [];
   const list = document.getElementById('guest-assign-list');
-  list.innerHTML = state.guests.map(g => {
+  // Include mariés at the top
+  const allPeople = [
+    ...(state.marie1 ? [state.marie1] : []),
+    ...(state.marie2 ? [state.marie2] : []),
+    ...state.guests
+  ];
+  list.innerHTML = allPeople.map(g => {
     const otherTable = state.tables.find(t => t.id !== id && t.guests.includes(g.id));
     const isSelected = currentTableGuests.includes(g.id);
+    const isMarie = g.id === 'marie-adil' || g.id === 'marie-nadiya';
     return `
       <div class="guest-assign-item ${isSelected ? 'selected' : ''} ${otherTable ? 'assigned-other' : ''}"
            onclick="toggleGuestAssign('${g.id}', this)"
-           data-guest-id="${g.id}">
-        <div class="avatar ${avatarColor(g.role)}" style="width:22px;height:22px;font-size:.62rem">${initials(g.firstname + ' ' + g.lastname)}</div>
-        <span>${g.firstname} ${g.lastname}</span>
+           data-guest-id="${g.id}"
+           style="${isMarie ? 'border:1px solid rgba(193,155,94,.3);background:rgba(193,155,94,.05)' : ''}">
+        <div class="avatar ${avatarColor(g.role)}" style="width:22px;height:22px;font-size:.62rem">${initials((g.firstname||'') + ' ' + (g.lastname||''))}</div>
+        <span>${g.firstname} ${g.lastname}${isMarie ? ' 💍' : ''}</span>
         ${otherTable ? `<span style="font-size:.68rem">(${otherTable.name})</span>` : ''}
       </div>
     `;
@@ -1124,77 +1281,166 @@ function deleteTable(id) {
 // ─── MENU ─────────────────────────────────────
 function renderMenu() {
   const pg = document.getElementById('page-menu');
+  if (!state.menus || state.menus.length === 0) {
+    state.menus = [{ id: uid(), name: 'Menu', lang: 'FR', sections: [
+      { id: uid(), name: 'Cocktail & Amuse-bouches', items: [] },
+      { id: uid(), name: 'Entrées', items: [] },
+      { id: uid(), name: 'Plats principaux', items: [] },
+      { id: uid(), name: 'Desserts & Pièce montée', items: [] },
+      { id: uid(), name: 'Boissons', items: [] },
+    ]}];
+  }
+
   pg.innerHTML = `
     <div class="page-header">
       <div>
-        <div class="page-title">Menu du mariage</div>
-        <div class="page-subtitle">Composez le festin de votre grand jour</div>
+        <div class="page-title">Menus</div>
+        <div class="page-subtitle">${state.menus.length} menu${state.menus.length > 1 ? 's' : ''}</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="addNewMenu()">
+          <svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
+          Nouveau menu
+        </button>
       </div>
     </div>
     <div class="page-body">
-      <div class="ornament" style="margin-bottom:1.5rem">✦ ── ✦ ── ✦</div>
-      ${state.menuSections.map(section => `
-        <div class="menu-section">
-          <div class="menu-section-header">
-            <div>
-              <div class="menu-section-title">${section.name}</div>
-              <div class="menu-section-subtitle">${section.items.length} plat${section.items.length > 1 ? 's' : ''}</div>
-            </div>
+      ${state.menus.map((menu, mi) => `
+        <div class="menu-card" style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:2rem;box-shadow:var(--shadow);overflow:hidden">
+          <!-- Menu header bar -->
+          <div style="background:var(--charcoal);padding:1rem 1.5rem;display:flex;align-items:center;gap:.8rem">
+            <input type="text" value="${menu.name}" onchange="renameMenu('${menu.id}', this.value)"
+              style="background:transparent;border:none;color:white;font-family:var(--font-display);font-size:1.2rem;font-weight:300;flex:1;outline:none;letter-spacing:.02em"
+              placeholder="Nom du menu...">
+            <input type="text" value="${menu.lang}" onchange="setMenuLang('${menu.id}', this.value)"
+              style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:var(--gold-light);border-radius:4px;width:52px;text-align:center;font-size:.8rem;padding:.2rem .4rem;outline:none;font-family:var(--font-body);letter-spacing:.1em"
+              placeholder="FR" title="Langue">
+            <button class="btn btn-sm btn-icon" style="color:rgba(255,255,255,.4);border-color:rgba(255,255,255,.15)" onclick="addMenuSection('${menu.id}')" title="Ajouter une rubrique">
+              <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M10 4v12M4 10h12" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+            ${state.menus.length > 1 ? `<button class="btn btn-sm btn-icon" style="color:#E8A0A0;border-color:rgba(255,255,255,.15)" onclick="deleteMenu('${menu.id}')" title="Supprimer ce menu">
+              <svg viewBox="0 0 20 20" style="width:13px;height:13px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>` : ''}
           </div>
-          <div class="menu-items-list">
-            ${section.items.length === 0 ? `
-              <div style="padding:.8rem 1.5rem;color:var(--muted);font-size:.82rem;font-style:italic">Aucun élément · ajoutez des plats ci-dessous</div>
-            ` : section.items.map((item, i) => `
-              <div class="menu-item">
-                <div>
-                  <div class="menu-item-name">${item.name}</div>
-                  ${item.desc ? `<div class="menu-item-desc">${item.desc}</div>` : ''}
-                </div>
-                <div class="menu-item-actions">
-                  ${item.vege ? `<span class="badge badge-sage" style="margin-right:.3rem">Végé</span>` : ''}
-                  ${item.halal ? `<span class="badge badge-gold" style="margin-right:.3rem">Halal</span>` : ''}
-                  <button class="btn btn-sm btn-icon" onclick="deleteMenuItem('${section.id}', ${i})" style="color:#C0392B">
-                    <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6"/></svg>
-                  </button>
-                </div>
+
+          <!-- Sections -->
+          ${(menu.sections || []).map((section, si) => `
+            <div style="border-bottom:1px solid var(--border);padding:0">
+              <!-- Section title row -->
+              <div style="display:flex;align-items:center;gap:.6rem;padding:.7rem 1.5rem;background:var(--ivory-2);border-bottom:1px solid var(--border)">
+                <input type="text" value="${section.name}" onchange="renameMenuSection('${menu.id}','${section.id}',this.value)"
+                  style="flex:1;background:transparent;border:none;font-family:var(--font-display);font-size:1rem;font-weight:400;color:var(--charcoal);outline:none"
+                  placeholder="Nom de la rubrique...">
+                <button onclick="addMenuItem('${menu.id}','${section.id}')" class="btn btn-sm btn-ghost" style="font-size:.72rem;flex-shrink:0">+ Ajouter un plat</button>
+                ${(menu.sections||[]).length > 1 ? `<button onclick="deleteMenuSection('${menu.id}','${section.id}')" class="btn btn-sm btn-icon" style="color:var(--muted);flex-shrink:0">
+                  <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </button>` : ''}
               </div>
-            `).join('')}
-          </div>
-          <div class="menu-add-form">
-            <input type="text" id="menu-name-${section.id}" placeholder="Nom du plat...">
-            <input type="text" id="menu-desc-${section.id}" placeholder="Description (optionnel)">
-            <label style="display:flex;align-items:center;gap:.3rem;font-size:.78rem;cursor:pointer;white-space:nowrap">
-              <input type="checkbox" id="menu-vege-${section.id}"> Végé
-            </label>
-            <label style="display:flex;align-items:center;gap:.3rem;font-size:.78rem;cursor:pointer;white-space:nowrap">
-              <input type="checkbox" id="menu-halal-${section.id}"> Halal
-            </label>
-            <button class="btn btn-primary btn-sm" onclick="addMenuItem('${section.id}')">Ajouter</button>
-          </div>
+
+              <!-- Items -->
+              ${section.items.length === 0 ? '<div style="padding:.6rem 1.5rem;font-size:.82rem;color:var(--muted);font-style:italic">Aucun plat · cliquez sur « Ajouter un plat »</div>' :
+                section.items.map((item, ii) => `
+                  <div style="display:grid;grid-template-columns:1fr 2fr auto auto auto;align-items:center;gap:.6rem;padding:.55rem 1.5rem;border-bottom:1px solid var(--border);transition:background .15s" onmouseover="this.style.background='var(--ivory)'" onmouseout="this.style.background=''">
+                    <input type="text" value="${item.name}" onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'name',this.value)"
+                      style="border:none;border-bottom:1px solid transparent;font-size:.9rem;font-weight:500;color:var(--charcoal);background:transparent;outline:none;padding:.1rem 0;font-family:var(--font-body)"
+                      onmouseover="this.style.borderBottomColor='var(--border-hover)'" onmouseout="this.style.borderBottomColor='transparent'"
+                      onblur="this.style.borderBottomColor='transparent'" onfocus="this.style.borderBottomColor='var(--gold)'"
+                      placeholder="Nom du plat">
+                    <input type="text" value="${item.desc||''}" onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'desc',this.value)"
+                      style="border:none;border-bottom:1px solid transparent;font-size:.8rem;color:var(--muted);background:transparent;outline:none;padding:.1rem 0;font-family:var(--font-body)"
+                      onmouseover="this.style.borderBottomColor='var(--border-hover)'" onmouseout="this.style.borderBottomColor='transparent'"
+                      onblur="this.style.borderBottomColor='transparent'" onfocus="this.style.borderBottomColor='var(--gold)'"
+                      placeholder="Description, ingrédients...">
+                    <label style="display:flex;align-items:center;gap:.25rem;font-size:.72rem;color:var(--sage);cursor:pointer;white-space:nowrap">
+                      <input type="checkbox" ${item.vege?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'vege',this.checked)" style="accent-color:var(--sage)"> Végé
+                    </label>
+                    <label style="display:flex;align-items:center;gap:.25rem;font-size:.72rem;color:var(--gold);cursor:pointer;white-space:nowrap">
+                      <input type="checkbox" ${item.halal?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'halal',this.checked)" style="accent-color:var(--gold)"> Halal
+                    </label>
+                    <button onclick="deleteMenuItem('${menu.id}','${section.id}',${ii})" class="btn btn-sm btn-icon" style="color:var(--muted)">
+                      <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </button>
+                  </div>
+                `).join('')}
+            </div>
+          `).join('')}
         </div>
       `).join('')}
     </div>
   `;
 }
 
-function addMenuItem(sectionId) {
-  const name = document.getElementById(`menu-name-${sectionId}`).value.trim();
-  if (!name) return;
-  const desc = document.getElementById(`menu-desc-${sectionId}`).value.trim();
-  const vege = document.getElementById(`menu-vege-${sectionId}`).checked;
-  const halal = document.getElementById(`menu-halal-${sectionId}`).checked;
-  const section = state.menuSections.find(s => s.id === sectionId);
-  section.items.push({ name, desc, vege, halal });
-  save();
-  renderMenu();
-  toast(`${name} ajouté !`);
+function addNewMenu() {
+  state.menus.push({ id: uid(), name: 'Nouveau menu', lang: 'FR', sections: [
+    { id: uid(), name: 'Entrées', items: [] },
+    { id: uid(), name: 'Plats principaux', items: [] },
+    { id: uid(), name: 'Desserts', items: [] },
+  ]});
+  save(); renderMenu();
 }
 
-function deleteMenuItem(sectionId, idx) {
-  const section = state.menuSections.find(s => s.id === sectionId);
-  section.items.splice(idx, 1);
+function deleteMenu(menuId) {
+  if (!confirm('Supprimer ce menu ?')) return;
+  state.menus = state.menus.filter(m => m.id !== menuId);
+  save(); renderMenu();
+}
+
+function renameMenu(menuId, name) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (m) { m.name = name; save(); }
+}
+
+function setMenuLang(menuId, lang) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (m) { m.lang = lang.toUpperCase(); save(); }
+}
+
+function addMenuSection(menuId) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (!m) return;
+  m.sections.push({ id: uid(), name: 'Nouvelle rubrique', items: [] });
+  save(); renderMenu();
+}
+
+function deleteMenuSection(menuId, sectionId) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (!m) return;
+  m.sections = m.sections.filter(s => s.id !== sectionId);
+  save(); renderMenu();
+}
+
+function renameMenuSection(menuId, sectionId, name) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (!m) return;
+  const s = m.sections.find(s => s.id === sectionId);
+  if (s) { s.name = name; save(); }
+}
+
+function addMenuItem(menuId, sectionId) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (!m) return;
+  const s = m.sections.find(s => s.id === sectionId);
+  if (!s) return;
+  s.items.push({ name: '', desc: '', vege: false, halal: false });
+  save(); renderMenu();
+}
+
+function updateMenuItem(menuId, sectionId, idx, field, value) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (!m) return;
+  const s = m.sections.find(s => s.id === sectionId);
+  if (!s || !s.items[idx]) return;
+  s.items[idx][field] = value;
   save();
-  renderMenu();
+}
+
+function deleteMenuItem(menuId, sectionId, idx) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (!m) return;
+  const s = m.sections.find(s => s.id === sectionId);
+  if (!s) return;
+  s.items.splice(idx, 1);
+  save(); renderMenu();
 }
 
 // ─── BUDGET ────────────────────────────────────
@@ -1581,6 +1827,78 @@ function deleteEvent(id) {
   renderPlanning();
 }
 
+// ─── MARIÉS ────────────────────────────────────
+function renderMaries() {
+  const pg = document.getElementById('page-maries');
+  const dietOptions = ['standard','végétarien','végétalien','halal','sans-gluten','sans-poisson','autre'];
+
+  function mariForm(key, label) {
+    const m = state[key];
+    return `
+      <div style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)">
+        <div style="background:var(--charcoal);padding:1.2rem 1.5rem;display:flex;align-items:center;gap:.8rem">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:.9rem;color:white;flex-shrink:0">${(m.firstname||'?')[0]}</div>
+          <div>
+            <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:300;color:white">${label}</div>
+            <div style="font-size:.7rem;color:var(--gold-light);letter-spacing:.08em">${m.role}</div>
+          </div>
+        </div>
+        <div class="form-grid" style="padding:1.5rem;gap:1rem">
+          <div class="form-group">
+            <label>Prénom</label>
+            <input type="text" value="${m.firstname||''}" oninput="updateMarie('${key}','firstname',this.value)" placeholder="Prénom">
+          </div>
+          <div class="form-group">
+            <label>Nom</label>
+            <input type="text" value="${m.lastname||''}" oninput="updateMarie('${key}','lastname',this.value)" placeholder="Nom de famille">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" value="${m.email||''}" oninput="updateMarie('${key}','email',this.value)" placeholder="email@exemple.fr">
+          </div>
+          <div class="form-group">
+            <label>Téléphone</label>
+            <input type="tel" value="${m.phone||''}" oninput="updateMarie('${key}','phone',this.value)" placeholder="+33 6 00 00 00 00">
+          </div>
+          <div class="form-group">
+            <label>Régime alimentaire</label>
+            <select onchange="updateMarie('${key}','diet',this.value)">
+              ${dietOptions.map(d => `<option value="${d}" ${m.diet===d?'selected':''}>${d==='standard'?'Standard':d.charAt(0).toUpperCase()+d.slice(1)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Notes / Allergies</label>
+            <input type="text" value="${m.notes||''}" oninput="updateMarie('${key}','notes',this.value)" placeholder="Allergies, préférences...">
+          </div>
+        </div>
+      </div>`;
+  }
+
+  pg.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Les mariés</div>
+        <div class="page-subtitle">Profils d'Adil & Nadiya</div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div style="background:var(--gold-pale);border:1px solid rgba(193,155,94,.3);border-radius:var(--radius);padding:.7rem 1.1rem;margin-bottom:1.5rem;font-size:.82rem;color:var(--charcoal-2)">
+        💡 Les profils des mariés peuvent être assignés aux tables dans le plan de table, comme les invités.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+        ${mariForm('marie1', 'Le marié — Adil')}
+        ${mariForm('marie2', 'La mariée — Nadiya')}
+      </div>
+    </div>
+  `;
+}
+
+function updateMarie(key, field, value) {
+  if (!state[key]) return;
+  state[key][field] = value;
+  save();
+}
+
 // ─── EXPORT PDF ────────────────────────────────
 function exportPDF() {
   const win = window.open('', '_blank');
@@ -1612,14 +1930,16 @@ function exportPDF() {
     `;
   }).join('');
 
-  const menuHTML = state.menuSections.map(s => {
-    if (s.items.length === 0) return '';
-    return `
-      <div class="menu-block">
+  const menuHTML = (state.menus || []).map(menu => {
+    const sectionsHTML = (menu.sections || []).map(s => {
+      if (!s.items || s.items.length === 0) return '';
+      return `<div class="menu-block">
         <div class="menu-header">${s.name}</div>
-        <ul>${s.items.map(item => `<li><strong>${item.name}</strong>${item.desc ? ` — ${item.desc}` : ''}${item.vege ? ' <span class="tag">Végé</span>' : ''}${item.halal ? ' <span class="tag halal">Halal</span>' : ''}</li>`).join('')}</ul>
-      </div>
-    `;
+        <ul>${s.items.map(item => '<li><strong>' + item.name + '</strong>' + (item.desc ? ' — ' + item.desc : '') + (item.vege ? ' <span class="tag">Végé</span>' : '') + (item.halal ? ' <span class="tag halal">Halal</span>' : '') + '</li>').join('')}</ul>
+      </div>`;
+    }).join('');
+    if (!sectionsHTML) return '';
+    return `<div style="margin-bottom:1.5cm"><div style="font-family:Cormorant Garamond,serif;font-size:16pt;font-weight:400;color:#6B2D3E;border-bottom:1px solid #e8ddd0;padding-bottom:.2cm;margin-bottom:.4cm">${menu.name} <span style="font-size:10pt;color:#C19B5E">${menu.lang}</span></div>${sectionsHTML}</div>`;
   }).join('');
 
   win.document.write(`<!DOCTYPE html><html lang="fr"><head>
