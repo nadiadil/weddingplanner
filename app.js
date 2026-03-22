@@ -1959,13 +1959,14 @@ function exportCardPDF(menuId) {
       <div class="item">
         <div class="item-main">
           <span class="item-name">${item.name || '—'}</span>
-          ${item.vege || item.halal ? `<span class="item-tags">${item.vege ? '<span class="tag vege">Végé</span>' : ''}${item.halal ? '<span class="tag halal">Halal</span>' : ''}</span>` : ''}
+          ${item.vege || item.halal ? '<span class="item-tags">' + (item.vege ? '<span class="tag vege">Végé</span>' : '') + (item.halal ? '<span class="tag halal">Halal</span>' : '') + '</span>' : ''}
         </div>
-        ${item.desc ? `<div class="item-desc">${item.desc}</div>` : ''}
+        ${item.desc ? '<div class="item-desc">' + item.desc + '</div>' : ''}
       </div>
     `).join('');
     return `<div class="section">
       <div class="section-title">${section.name}</div>
+      <div class="section-ornament">· · ·</div>
       <div class="items">${itemsHTML}</div>
     </div>`;
   }).join('');
@@ -2101,6 +2102,7 @@ function exportCardPDF(menuId) {
       padding-bottom: 4px;
       margin-bottom: 6px;
       letter-spacing: .02em;
+      text-align: center;
     }
 
     .empty-section {
@@ -2108,41 +2110,44 @@ function exportCardPDF(menuId) {
       color: #8A7D74;
       font-style: italic;
       padding: 2px 0;
+      text-align: center;
     }
 
     /* ── Items ── */
     .item {
-      padding: 5px 0;
+      padding: 6px 0;
       border-bottom: 1px solid rgba(44,37,32,.05);
+      text-align: center;
     }
 
     .item:last-child { border-bottom: none; }
 
     .item-main {
       display: flex;
-      align-items: baseline;
-      justify-content: space-between;
+      align-items: center;
+      justify-content: center;
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     .item-name {
       font-size: 10.5pt;
-      font-weight: 400;
+      font-weight: 500;
       color: #2C2520;
-      flex: 1;
     }
 
     .item-desc {
       font-size: 8.5pt;
       color: #8A7D74;
       font-style: italic;
-      margin-top: 1px;
-      padding-left: 0;
+      margin-top: 2px;
+      text-align: center;
     }
 
     .item-tags {
       display: flex;
       gap: 4px;
+      justify-content: center;
       flex-shrink: 0;
     }
 
@@ -2165,6 +2170,24 @@ function exportCardPDF(menuId) {
       background: #FAF3E8;
       color: #C19B5E;
       border: 1px solid #D4B483;
+    }
+
+    /* ── Section divider ── */
+    .section-ornament {
+      text-align: center;
+      color: #C19B5E;
+      font-size: 7pt;
+      letter-spacing: .2em;
+      opacity: .4;
+      margin: 3px 0 8px;
+    }
+
+    /* ── Card title bar centered ── */
+    .card-title-bar {
+      background: #F2EBE0 !important;
+      text-align: center !important;
+      justify-content: center !important;
+      gap: 12px !important;
     }
 
     /* ── Footer ── */
@@ -2212,7 +2235,7 @@ function exportCardPDF(menuId) {
       <div class="wedding-date">26 · Juin · 2026</div>
     </div>
 
-    <div class="card-title-bar">
+    <div class="card-title-bar" style="display:flex;align-items:center;justify-content:center;gap:12px;background:#F2EBE0;border-bottom:1px solid #E8DDD0;padding:10px 36px">
       <div class="card-title">${menu.name}</div>
       <div class="card-lang">${menu.lang}</div>
     </div>
