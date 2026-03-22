@@ -43,6 +43,7 @@ function save() {
     tasks: state.tasks,
     events: state.events,
     tablePositions: state.tablePositions,
+    seatOffsets: state.seatOffsets,
   }));
 }
 
@@ -52,6 +53,7 @@ function load() {
   const data = JSON.parse(raw);
   Object.assign(state, data);
   if (!state.tablePositions) state.tablePositions = {};
+  if (!state.seatOffsets) state.seatOffsets = {};
 }
 
 function toast(msg) {
@@ -500,6 +502,7 @@ function deleteGuest(id) {
 // ─── SEATING ───────────────────────────────────
 
 if (!state.tablePositions) state.tablePositions = {};
+if (!state.seatOffsets) state.seatOffsets = {}; // { "tableId:seatIndex": {dx, dy} }
 let seatingSelectedId = null;
 let seatingZoom = 1;
 let seatingSnap = false;
@@ -563,7 +566,7 @@ function renderSeating() {
         <!-- Canvas zone -->
         <div id="seating-scroll" style="flex:1;overflow:auto;background:var(--ivory-2);position:relative;cursor:default"
              onclick="seatingDeselectAll(event)">
-          <div id="seating-canvas" style="position:relative;width:1400px;min-height:800px;transform-origin:top left;transform:scale(${seatingZoom})">
+          <div id="seating-canvas" style="position:relative;width:1820px;min-height:1040px;transform-origin:top left;transform:scale(${seatingZoom})">
             <!-- Room outline -->
             <div style="position:absolute;inset:16px;border:2px dashed rgba(44,37,32,.1);border-radius:20px;pointer-events:none;z-index:0"></div>
             <div style="position:absolute;top:22px;left:50%;transform:translateX(-50%);font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(44,37,32,.3);pointer-events:none;white-space:nowrap">— Salle de réception —</div>
@@ -607,10 +610,10 @@ function renderSeating() {
 
 function buildSnapGrid() {
   let lines = '';
-  for (let x = 0; x <= 1400; x += 40) {
+  for (let x = 0; x <= 1820; x += 40) {
     lines += `<div style="position:absolute;left:${x}px;top:0;bottom:0;width:1px;background:rgba(44,37,32,.05);pointer-events:none"></div>`;
   }
-  for (let y = 0; y <= 800; y += 40) {
+  for (let y = 0; y <= 1040; y += 40) {
     lines += `<div style="position:absolute;top:${y}px;left:0;right:0;height:1px;background:rgba(44,37,32,.05);pointer-events:none"></div>`;
   }
   return lines;
@@ -662,63 +665,74 @@ function renderTableNode(table) {
   `;
 }
 
-function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong, pad) {
-  const total = table.capacity;
+function defaultSeatPos(i, total, tableW, tableH, isRound, isLong, pad) {
   const seatSize = 26;
   const cx = tableW / 2 + pad;
   const cy = tableH / 2 + pad;
+  let sx, sy;
+  if (isRound) {
+    const angle = (i / total) * 2 * Math.PI - Math.PI / 2;
+    const rx = tableW / 2 + 20;
+    const ry = tableH / 2 + 20;
+    sx = cx + rx * Math.cos(angle) - seatSize / 2;
+    sy = cy + ry * Math.sin(angle) - seatSize / 2;
+  } else if (isLong) {
+    const topCount = Math.ceil(total / 2);
+    const botCount = total - topCount;
+    if (i < topCount) {
+      sx = pad + (tableW / (topCount + 1)) * (i + 1) - seatSize / 2;
+      sy = pad - seatSize - 4;
+    } else {
+      const j = i - topCount;
+      sx = pad + (tableW / (botCount + 1)) * (j + 1) - seatSize / 2;
+      sy = pad + tableH + 4;
+    }
+  } else {
+    const sides = distributeSeatsSides(total);
+    let sideIdx = 0, posInSide = 0, counted = 0;
+    for (let s = 0; s < 4; s++) {
+      if (i < counted + sides[s]) { sideIdx = s; posInSide = i - counted; break; }
+      counted += sides[s];
+    }
+    const n = sides[sideIdx];
+    if (sideIdx === 0) { sx = pad + (tableW / (n + 1)) * (posInSide + 1) - seatSize / 2; sy = pad - seatSize - 4; }
+    else if (sideIdx === 1) { sx = pad + tableW + 4; sy = pad + (tableH / (n + 1)) * (posInSide + 1) - seatSize / 2; }
+    else if (sideIdx === 2) { sx = pad + (tableW / (n + 1)) * (posInSide + 1) - seatSize / 2; sy = pad + tableH + 4; }
+    else { sx = pad - seatSize - 4; sy = pad + (tableH / (n + 1)) * (posInSide + 1) - seatSize / 2; }
+  }
+  return { sx: Math.round(sx), sy: Math.round(sy) };
+}
+
+function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong, pad) {
+  const total = table.capacity;
+  const seatSize = 26;
   let seats = '';
 
   for (let i = 0; i < total; i++) {
     const guest = tableGuests[i] || null;
-    let sx, sy;
-
-    if (isRound) {
-      const angle = (i / total) * 2 * Math.PI - Math.PI / 2;
-      const rx = tableW / 2 + 20;
-      const ry = tableH / 2 + 20;
-      sx = cx + rx * Math.cos(angle) - seatSize / 2;
-      sy = cy + ry * Math.sin(angle) - seatSize / 2;
-    } else if (isLong) {
-      const topCount = Math.ceil(total / 2);
-      const botCount = total - topCount;
-      if (i < topCount) {
-        sx = pad + (tableW / (topCount + 1)) * (i + 1) - seatSize / 2;
-        sy = pad - seatSize - 4;
-      } else {
-        const j = i - topCount;
-        sx = pad + (tableW / (botCount + 1)) * (j + 1) - seatSize / 2;
-        sy = pad + tableH + 4;
-      }
-    } else {
-      // Rectangular: smart distribution on 4 sides
-      const sides = distributeSeatsSides(total);
-      let sideIdx = 0, posInSide = 0, counted = 0;
-      for (let s = 0; s < 4; s++) {
-        if (i < counted + sides[s]) { sideIdx = s; posInSide = i - counted; break; }
-        counted += sides[s];
-      }
-      const n = sides[sideIdx];
-      if (sideIdx === 0) { // top
-        sx = pad + (tableW / (n + 1)) * (posInSide + 1) - seatSize / 2;
-        sy = pad - seatSize - 4;
-      } else if (sideIdx === 1) { // right
-        sx = pad + tableW + 4;
-        sy = pad + (tableH / (n + 1)) * (posInSide + 1) - seatSize / 2;
-      } else if (sideIdx === 2) { // bottom
-        sx = pad + (tableW / (n + 1)) * (posInSide + 1) - seatSize / 2;
-        sy = pad + tableH + 4;
-      } else { // left
-        sx = pad - seatSize - 4;
-        sy = pad + (tableH / (n + 1)) * (posInSide + 1) - seatSize / 2;
-      }
-    }
+    const key = table.id + ':' + i;
+    const offset = state.seatOffsets[key] || { dx: 0, dy: 0 };
+    const def = defaultSeatPos(i, total, tableW, tableH, isRound, isLong, pad);
+    const sx = def.sx + offset.dx;
+    const sy = def.sy + offset.dy;
 
     const bg = guest ? roleColor(guest.role) : 'var(--ivory-3)';
     const label = guest ? initials(guest.firstname + ' ' + guest.lastname) : '';
-    const title = guest ? `${guest.firstname} ${guest.lastname}` : 'Place libre';
+    const title = guest ? guest.firstname + ' ' + guest.lastname : 'Place libre';
+    const hasMoved = offset.dx !== 0 || offset.dy !== 0;
 
-    seats += `<div title="${title}" style="position:absolute;left:${Math.round(sx)}px;top:${Math.round(sy)}px;width:${seatSize}px;height:${seatSize}px;border-radius:50%;background:${bg};border:2px solid ${guest ? 'rgba(255,255,255,.4)' : 'var(--border-hover)'};display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;color:${guest ? 'white' : 'var(--muted)'};font-family:var(--font-body);box-shadow:${guest ? '0 1px 4px rgba(0,0,0,.2)' : 'none'};z-index:3;pointer-events:none">${label}</div>`;
+    // Draw anchor line from default position to current if moved
+    const linePart = hasMoved ? (() => {
+      const defX = def.sx + seatSize / 2;
+      const defY = def.sy + seatSize / 2;
+      const curX = sx + seatSize / 2;
+      const curY = sy + seatSize / 2;
+      const len = Math.hypot(curX - defX, curY - defY);
+      const angle = Math.atan2(curY - defY, curX - defX) * 180 / Math.PI;
+      return '<div style="position:absolute;left:' + defX + 'px;top:' + defY + 'px;width:' + len + 'px;height:1px;background:rgba(193,155,94,.4);transform-origin:0 50%;transform:rotate(' + angle + 'deg);pointer-events:none;z-index:1"></div>';
+    })() : '';
+
+    seats += linePart + '<div class="draggable-seat" data-table-id="' + table.id + '" data-seat-idx="' + i + '" title="' + title + '" style="position:absolute;left:' + sx + 'px;top:' + sy + 'px;width:' + seatSize + 'px;height:' + seatSize + 'px;border-radius:50%;background:' + bg + ';border:2px solid ' + (guest ? 'rgba(255,255,255,.4)' : 'var(--border-hover)') + ';display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;color:' + (guest ? 'white' : 'var(--muted)') + ';font-family:var(--font-body);box-shadow:' + (guest ? '0 1px 4px rgba(0,0,0,.2)' : 'none') + ';z-index:4;cursor:grab;' + (hasMoved ? 'outline:1.5px dashed rgba(193,155,94,.6);outline-offset:2px;' : '') + '">' + label + '</div>';
   }
   return seats;
 }
@@ -823,7 +837,7 @@ function renderSeatingPanel(tableId) {
       </div>
 
       <!-- Actions -->
-      <div style="display:flex;gap:.4rem;margin-bottom:1rem">
+      <div style="display:flex;gap:.4rem;margin-bottom:.5rem">
         <button class="btn btn-primary btn-sm" style="flex:1" onclick="openTableModal('${table.id}')">
           <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M13.5 2.5L17.5 6.5L7 17H3v-4L13.5 2.5z" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
           Modifier
@@ -832,6 +846,10 @@ function renderSeatingPanel(tableId) {
           <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
         </button>
       </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;font-size:.72rem;margin-bottom:1rem;color:var(--muted)" onclick="resetSeatOffsets('${table.id}')">
+        <svg viewBox="0 0 20 20" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><path d="M4 4v5h5M16 16v-5h-5M4.09 9A8 8 0 1116 15.91"/></svg>
+        Réinitialiser positions des sièges
+      </button>
 
       <!-- Guests list -->
       <div style="font-size:.72rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem">Invités (${tableGuests.length})</div>
@@ -907,14 +925,26 @@ function seatingToggleSnap() {
   }
 }
 
+function resetSeatOffsets(tableId) {
+  const table = state.tables.find(t => t.id === tableId);
+  if (!table) return;
+  for (let i = 0; i < table.capacity; i++) {
+    delete state.seatOffsets[tableId + ':' + i];
+  }
+  save();
+  refreshSeatingCanvas();
+  renderSeatingPanel(tableId);
+  toast('Sièges repositionnés à leur place par défaut.');
+}
+
 function initSeatingDrag() {
-  const nodes = document.querySelectorAll('.seating-node');
-  nodes.forEach(node => {
+  // ── Table drag ──────────────────────────────
+  document.querySelectorAll('.seating-node').forEach(node => {
     const tableId = node.dataset.tableId;
     let dragging = false, startX, startY, origX, origY, moved = false;
 
     node.addEventListener('mousedown', e => {
-      if (e.target.closest('button')) return;
+      if (e.target.closest('button') || e.target.closest('.draggable-seat')) return;
       dragging = true;
       moved = false;
       startX = e.clientX;
@@ -933,24 +963,18 @@ function initSeatingDrag() {
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
       let newX = Math.max(0, origX + dx / seatingZoom);
       let newY = Math.max(0, origY + dy / seatingZoom);
-      if (seatingSnap) {
-        newX = Math.round(newX / 40) * 40;
-        newY = Math.round(newY / 40) * 40;
-      }
+      if (seatingSnap) { newX = Math.round(newX / 40) * 40; newY = Math.round(newY / 40) * 40; }
       node.style.left = newX + 'px';
       node.style.top = newY + 'px';
     };
 
-    const onUp = e => {
+    const onUp = () => {
       if (!dragging) return;
       dragging = false;
       node.style.cursor = 'grab';
       node.style.zIndex = seatingSelectedId === tableId ? 20 : 2;
       if (moved) {
-        state.tablePositions[tableId] = {
-          x: parseInt(node.style.left),
-          y: parseInt(node.style.top),
-        };
+        state.tablePositions[tableId] = { x: parseInt(node.style.left), y: parseInt(node.style.top) };
         save();
       }
     };
@@ -958,6 +982,100 @@ function initSeatingDrag() {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
+
+  // ── Seat drag ───────────────────────────────
+  document.querySelectorAll('.draggable-seat').forEach(seat => {
+    const tableId = seat.dataset.tableId;
+    const seatIdx = parseInt(seat.dataset.seatIdx);
+    const key = tableId + ':' + seatIdx;
+    let dragging = false, startX, startY, origDx, origDy;
+
+    seat.addEventListener('mousedown', e => {
+      e.stopPropagation(); // prevent table drag
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      const cur = state.seatOffsets[key] || { dx: 0, dy: 0 };
+      origDx = cur.dx;
+      origDy = cur.dy;
+      seat.style.cursor = 'grabbing';
+      seat.style.zIndex = 60;
+      e.preventDefault();
+    });
+
+    const onMove = e => {
+      if (!dragging) return;
+      const rawDx = (e.clientX - startX) / seatingZoom;
+      const rawDy = (e.clientY - startY) / seatingZoom;
+      const newDx = origDx + rawDx;
+      const newDy = origDy + rawDy;
+
+      // Apply offset to seat visually
+      const table = state.tables.find(t => t.id === tableId);
+      if (!table) return;
+      const isRound = table.shape === 'ronde';
+      const isLong = table.shape === 'longue';
+      const tableW = isLong ? 240 : isRound ? 130 : 170;
+      const tableH = isLong ? 75 : isRound ? 130 : 105;
+      const pad = 32;
+      const def = defaultSeatPos(seatIdx, table.capacity, tableW, tableH, isRound, isLong, pad);
+      seat.style.left = (def.sx + newDx) + 'px';
+      seat.style.top = (def.sy + newDy) + 'px';
+
+      // Update anchor line
+      updateAnchorLine(seat, def, newDx, newDy);
+    };
+
+    const onUp = e => {
+      if (!dragging) return;
+      dragging = false;
+      seat.style.cursor = 'grab';
+      seat.style.zIndex = 4;
+      const rawDx = (e.clientX - startX) / seatingZoom;
+      const rawDy = (e.clientY - startY) / seatingZoom;
+      state.seatOffsets[key] = { dx: origDx + rawDx, dy: origDy + rawDy };
+      save();
+    };
+
+    // Double-click to reset seat to default position
+    seat.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      delete state.seatOffsets[key];
+      save();
+      refreshSeatingCanvas();
+      if (seatingSelectedId) renderSeatingPanel(seatingSelectedId);
+    });
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+function updateAnchorLine(seat, def, newDx, newDy) {
+  // Find or create anchor line preceding the seat
+  const seatSize = 26;
+  const defX = def.sx + seatSize / 2;
+  const defY = def.sy + seatSize / 2;
+  const curX = def.sx + newDx + seatSize / 2;
+  const curY = def.sy + newDy + seatSize / 2;
+  const len = Math.hypot(curX - defX, curY - defY);
+  const angle = Math.atan2(curY - defY, curX - defX) * 180 / Math.PI;
+
+  let line = seat.previousElementSibling;
+  if (!line || !line.style.transformOrigin) {
+    line = document.createElement('div');
+    line.style.cssText = 'position:absolute;height:1px;background:rgba(193,155,94,.4);transform-origin:0 50%;pointer-events:none;z-index:1';
+    seat.parentNode.insertBefore(line, seat);
+  }
+  if (len < 2) {
+    line.style.display = 'none';
+  } else {
+    line.style.display = '';
+    line.style.left = defX + 'px';
+    line.style.top = defY + 'px';
+    line.style.width = len + 'px';
+    line.style.transform = 'rotate(' + angle + 'deg)';
+  }
 }
 
 function buildSeatingListView() {
@@ -1070,6 +1188,15 @@ function saveTable() {
     state.tables.push(table);
   }
 
+  // Reset seat offsets when table is modified (seats may have moved)
+  if (state.editingTableId) {
+    const oldTable = state.tables.find(t => t.id === state.editingTableId);
+    if (oldTable) {
+      for (let i = 0; i < Math.max(oldTable.capacity, capacity); i++) {
+        delete state.seatOffsets[(state.editingTableId || table.id) + ':' + i];
+      }
+    }
+  }
   save();
   closeModal('table-modal');
   toast(state.editingTableId ? 'Table mise à jour !' : 'Table créée !');
@@ -1078,7 +1205,16 @@ function saveTable() {
 
 function deleteTable(id) {
   if (!confirm('Supprimer cette table ?')) return;
+  const table = state.tables.find(t => t.id === id);
+  if (table) {
+    for (let i = 0; i < table.capacity; i++) delete state.seatOffsets[id + ':' + i];
+  }
   state.tables = state.tables.filter(t => t.id !== id);
+  if (seatingSelectedId === id) {
+    seatingSelectedId = null;
+    const panel = document.getElementById('seating-panel-content');
+    if (panel) panel.innerHTML = '<div style="text-align:center;padding:2rem 1rem;color:var(--muted)"><div style="font-size:1.8rem;margin-bottom:.5rem;opacity:.3">🪑</div><div style="font-family:var(--font-display);font-size:1rem;font-weight:400;color:var(--charcoal-2);margin-bottom:.3rem">Sélectionner une table</div></div>';
+  }
   save();
   renderSeating();
   toast('Table supprimée.');
