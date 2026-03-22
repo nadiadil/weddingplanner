@@ -850,7 +850,7 @@ function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong, pad) {
     const title = guest ? guest.firstname + ' ' + guest.lastname : 'Place libre';
     const hasMoved = state.seatOffsets[key] !== undefined;
 
-    seats += '<div class="draggable-seat" data-table-id="' + table.id + '" data-seat-idx="' + i + '" title="' + title + '" style="position:absolute;left:' + Math.round(sx) + 'px;top:' + Math.round(sy) + 'px;width:' + seatSize + 'px;height:' + seatSize + 'px;border-radius:50%;background:' + bg + ';border:2px solid ' + (guest ? 'rgba(255,255,255,.5)' : 'var(--border-hover)') + ';display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;color:' + (guest ? 'white' : 'var(--muted)') + ';font-family:var(--font-body);box-shadow:' + (guest ? '0 1px 5px rgba(0,0,0,.25)' : 'none') + ';z-index:4;cursor:grab' + (hasMoved ? ';outline:1.5px dashed rgba(193,155,94,.7);outline-offset:2px' : '') + '">' + label + '</div>';
+    seats += '<div class="draggable-seat" data-table-id="' + table.id + '" data-seat-idx="' + i + '" title="' + title + '" style="position:absolute;left:' + Math.round(sx) + 'px;top:' + Math.round(sy) + 'px;width:' + seatSize + 'px;height:' + seatSize + 'px;border-radius:50%;background:' + bg + ';border:2px solid ' + (guest ? 'rgba(255,255,255,.5)' : 'var(--border-hover)') + ';display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;color:' + (guest ? 'white' : 'var(--muted)') + ';font-family:var(--font-body);box-shadow:' + (guest ? '0 1px 5px rgba(0,0,0,.25)' : 'none') + ';z-index:5;cursor:grab;touch-action:none' + (hasMoved ? ';outline:1.5px dashed rgba(193,155,94,.7);outline-offset:2px' : '') + '">' + label + '</div>';
   }
   return seats;
 }
@@ -1078,55 +1078,47 @@ function initSeatingDrag() {
     const tableId = seat.dataset.tableId;
     const seatIdx = parseInt(seat.dataset.seatIdx);
     const key = tableId + ':' + seatIdx;
-    let dragging = false, startX, startY;
 
     seat.addEventListener('mousedown', e => {
       e.stopPropagation();
-      dragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-      seat.style.cursor = 'grabbing';
-      seat.style.zIndex = 60;
       e.preventDefault();
-    });
 
-    const onMove = e => {
-      if (!dragging) return;
       const table = state.tables.find(t => t.id === tableId);
       if (!table) return;
-
       const isRound = table.shape === 'ronde';
       const isLong = table.shape === 'longue';
       const tableW = isLong ? 240 : isRound ? 130 : 170;
       const tableH = isLong ? 75 : isRound ? 130 : 105;
       const pad = 32;
-
-      // Mouse position relative to the node (accounting for zoom)
       const node = seat.closest('.seating-node');
-      const nodeRect = node.getBoundingClientRect();
-      const mouseX = (e.clientX - nodeRect.left) / seatingZoom;
-      const mouseY = (e.clientY - nodeRect.top) / seatingZoom;
 
-      // Clamp to perimeter
-      const pos = clampSeatToPerimeter(mouseX, mouseY, tableW, tableH, isRound, isLong, pad);
+      seat.style.cursor = 'grabbing';
+      seat.style.zIndex = 60;
 
-      seat.style.left = Math.round(pos.sx) + 'px';
-      seat.style.top = Math.round(pos.sy) + 'px';
+      // Use dedicated handlers captured in closure — no global conflict
+      function onMove(ev) {
+        const nodeRect = node.getBoundingClientRect();
+        const mouseX = (ev.clientX - nodeRect.left) / seatingZoom;
+        const mouseY = (ev.clientY - nodeRect.top) / seatingZoom;
+        const pos = clampSeatToPerimeter(mouseX, mouseY, tableW, tableH, isRound, isLong, pad);
+        seat.style.left = Math.round(pos.sx) + 'px';
+        seat.style.top = Math.round(pos.sy) + 'px';
+        state.seatOffsets[key] = { angle: pos.angle };
+      }
 
-      // Save angle continuously so release works even if mouseup misses
-      state.seatOffsets[key] = { angle: pos.angle };
-    };
+      function onUp() {
+        seat.style.cursor = 'grab';
+        seat.style.zIndex = 5;
+        save();
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
 
-    const onUp = e => {
-      if (!dragging) return;
-      dragging = false;
-      seat.style.cursor = 'grab';
-      seat.style.zIndex = 4;
-      // Final position already saved in onMove
-      save();
-    };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
 
-    // Double-click to reset this seat
+    // Double-click to reset
     seat.addEventListener('dblclick', e => {
       e.stopPropagation();
       delete state.seatOffsets[key];
@@ -1135,9 +1127,6 @@ function initSeatingDrag() {
       if (seatingSelectedId) renderSeatingPanel(seatingSelectedId);
       toast('Siège remis à sa position par défaut.');
     });
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
   });
 }
 
@@ -1251,6 +1240,14 @@ function saveTable() {
     const idx = state.tables.findIndex(t => t.id === state.editingTableId);
     state.tables[idx] = table;
   } else {
+    // First table ever created → auto-assign mariés
+    if (state.tables.length === 0) {
+      const marieeIds = [state.marie1?.id, state.marie2?.id].filter(Boolean);
+      marieeIds.forEach(mid => {
+        if (!table.guests.includes(mid)) table.guests.unshift(mid);
+      });
+      if (table.guests.length > table.capacity) table.capacity = table.guests.length;
+    }
     state.tables.push(table);
   }
 
@@ -1358,7 +1355,7 @@ function renderMenu() {
                   <!-- Section header -->
                   <div style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--ivory-2);border-bottom:1px solid var(--border)">
                     <input type="text" value="${section.name}" onchange="renameMenuSection('${menu.id}','${section.id}',this.value)"
-                      style="flex:1;background:transparent;border:none;font-family:var(--font-display);font-size:.85rem;font-weight:400;color:var(--charcoal);outline:none;min-width:0"
+                      style="flex:1;background:transparent;border:none;font-family:var(--font-display);font-size:.85rem;font-weight:400;color:var(--charcoal);outline:none;min-width:0;text-align:center"
                       placeholder="Rubrique...">
                     <button onclick="addMenuItem('${menu.id}','${section.id}')"
                       style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:.72rem;font-family:var(--font-body);white-space:nowrap;padding:0;flex-shrink:0">+ Plat</button>
@@ -1369,24 +1366,26 @@ function renderMenu() {
                   ${section.items.length === 0
                     ? '<div style="padding:.3rem .8rem;font-size:.72rem;color:var(--muted);font-style:italic">Vide — cliquez sur + Plat</div>'
                     : section.items.map((item, ii) => `
-                      <div style="display:grid;grid-template-columns:1fr 1.4fr auto auto auto;align-items:center;gap:.4rem;padding:.3rem .8rem;border-bottom:1px solid rgba(44,37,32,.05)"
+                      <div style="display:flex;flex-direction:column;align-items:center;gap:.15rem;padding:.4rem .8rem;border-bottom:1px solid rgba(44,37,32,.05);text-align:center"
                         onmouseover="this.style.background='var(--ivory)'" onmouseout="this.style.background=''">
                         <input type="text" value="${item.name}" oninput="updateMenuItem('${menu.id}','${section.id}',${ii},'name',this.value)"
-                          style="border:none;border-bottom:1px solid transparent;font-size:.78rem;font-weight:500;color:var(--charcoal);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);min-width:0"
+                          style="border:none;border-bottom:1px solid transparent;font-size:.78rem;font-weight:500;color:var(--charcoal);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);min-width:0;text-align:center;width:100%"
                           onfocus="this.style.borderBottomColor='var(--gold)'" onblur="this.style.borderBottomColor='transparent'"
                           placeholder="Nom du plat">
                         <input type="text" value="${item.desc||''}" oninput="updateMenuItem('${menu.id}','${section.id}',${ii},'desc',this.value)"
-                          style="border:none;border-bottom:1px solid transparent;font-size:.72rem;color:var(--muted);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);min-width:0"
+                          style="border:none;border-bottom:1px solid transparent;font-size:.72rem;color:var(--muted);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);min-width:0;text-align:center;width:100%"
                           onfocus="this.style.borderBottomColor='var(--gold)'" onblur="this.style.borderBottomColor='transparent'"
                           placeholder="Description...">
-                        <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--sage);cursor:pointer;white-space:nowrap">
-                          <input type="checkbox" ${item.vege?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'vege',this.checked)" style="accent-color:var(--sage);width:11px;height:11px"> V
-                        </label>
-                        <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--gold);cursor:pointer;white-space:nowrap">
-                          <input type="checkbox" ${item.halal?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'halal',this.checked)" style="accent-color:var(--gold);width:11px;height:11px"> H
-                        </label>
-                        <button onclick="deleteMenuItem('${menu.id}','${section.id}',${ii})"
-                          style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0;line-height:1">×</button>
+                        <div style="display:flex;align-items:center;gap:.6rem;justify-content:center">
+                          <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--sage);cursor:pointer;white-space:nowrap">
+                            <input type="checkbox" ${item.vege?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'vege',this.checked)" style="accent-color:var(--sage);width:11px;height:11px"> Végé
+                          </label>
+                          <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--gold);cursor:pointer;white-space:nowrap">
+                            <input type="checkbox" ${item.halal?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'halal',this.checked)" style="accent-color:var(--gold);width:11px;height:11px"> Halal
+                          </label>
+                          <button onclick="deleteMenuItem('${menu.id}','${section.id}',${ii})"
+                            style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0;line-height:1">×</button>
+                        </div>
                       </div>
                     `).join('')}
                 </div>
