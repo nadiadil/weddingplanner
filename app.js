@@ -498,15 +498,17 @@ function deleteGuest(id) {
 }
 
 // ─── SEATING ───────────────────────────────────
-// ─── SEATING VISUAL (drag & drop canvas) ──────
 
-// Table positions stored in state
 if (!state.tablePositions) state.tablePositions = {};
+let seatingSelectedId = null;
+let seatingZoom = 1;
+let seatingSnap = false;
 
 function renderSeating() {
   const pg = document.getElementById('page-seating');
   const placedCount = state.tables.reduce((s, t) => s + t.guests.length, 0);
   const unplaced = state.guests.filter(g => !state.tables.some(t => t.guests.includes(g.id)));
+  seatingSelectedId = null;
 
   pg.innerHTML = `
     <div class="page-header">
@@ -515,13 +517,19 @@ function renderSeating() {
         <div class="page-subtitle">${state.tables.length} table${state.tables.length > 1 ? 's' : ''} · ${placedCount} / ${state.guests.length} invités placés</div>
       </div>
       <div class="page-actions">
-        <button class="btn btn-ghost" onclick="toggleSeatingView()" id="seating-view-toggle">
-          <svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round"><rect x="2" y="3" width="7" height="7" rx="1"/><rect x="11" y="3" width="7" height="7" rx="1"/><rect x="2" y="11" width="7" height="7" rx="1"/><rect x="11" y="11" width="7" height="7" rx="1"/></svg>
-          Vue liste
+        <button class="btn btn-ghost" onclick="seatingToggleSnap()" id="btn-snap" title="Aligner sur grille">
+          <svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round"><path d="M3 3h3v3H3zM9 3h3v3H9zM15 3h2v2h-2zM3 9h3v3H3zM9 9h3v3H9zM15 9h2v2h-2zM3 15h3v2H3zM9 15h3v2H9zM15 15h2v2h-2z"/></svg>
+          Grille
+        </button>
+        <button class="btn btn-ghost" onclick="seatingZoomOut()" title="Zoom -">
+          <svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><circle cx="9" cy="9" r="6"/><path d="M6 9h6M15 15l3 3"/></svg>
+        </button>
+        <button class="btn btn-ghost" onclick="seatingZoomIn()" title="Zoom +">
+          <svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><circle cx="9" cy="9" r="6"/><path d="M9 6v6M6 9h6M15 15l3 3"/></svg>
         </button>
         <button class="btn btn-ghost" onclick="exportPDF()">
           <svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round"><path d="M4 4h8l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M12 4v4h4M7 12h6M7 15h4"/></svg>
-          Exporter PDF
+          PDF
         </button>
         <button class="btn btn-primary" onclick="openTableModal()">
           <svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
@@ -531,12 +539,12 @@ function renderSeating() {
     </div>
 
     ${unplaced.length > 0 ? `
-      <div style="padding:.6rem 2.5rem;background:var(--wine-pale);border-bottom:1px solid rgba(107,45,62,.15);font-size:.82rem;color:var(--wine)">
+      <div style="padding:.5rem 2.5rem;background:var(--wine-pale);border-bottom:1px solid rgba(107,45,62,.15);font-size:.82rem;color:var(--wine)">
         <strong>${unplaced.length} non placé${unplaced.length > 1 ? 's' : ''} :</strong>
-        ${unplaced.map(g => `${g.firstname} ${g.lastname}`).join(', ')}
+        ${unplaced.map(g => `<span style="margin-right:.4rem">${g.firstname} ${g.lastname}</span>`).join('')}
       </div>
     ` : state.guests.length > 0 && state.tables.length > 0 ? `
-      <div style="padding:.6rem 2.5rem;background:#EAF4EA;border-bottom:1px solid #8FC98A;font-size:.82rem;color:#3A7D44">
+      <div style="padding:.5rem 2.5rem;background:#EAF4EA;border-bottom:1px solid #8FC98A;font-size:.82rem;color:#3A7D44">
         ✓ Tous les invités sont placés !
       </div>
     ` : ''}
@@ -550,17 +558,43 @@ function renderSeating() {
         </div>
       </div>
     ` : `
-      <div id="seating-canvas-wrap" style="position:relative;overflow:hidden;background:var(--ivory-2);border-top:1px solid var(--border);min-height:calc(100vh - 200px)">
-        <div id="seating-canvas" style="position:relative;width:100%;min-height:calc(100vh - 200px);overflow:auto">
-          <div id="seating-room" style="position:relative;width:1200px;min-height:700px;margin:0 auto;padding:20px">
-            <!-- Room border decoration -->
-            <div style="position:absolute;inset:12px;border:2px dashed rgba(44,37,32,.12);border-radius:16px;pointer-events:none;z-index:0"></div>
-            <div style="position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);pointer-events:none;z-index:1">— Salle de réception —</div>
+      <div style="display:flex;height:calc(100vh - ${unplaced.length > 0 || (state.guests.length > 0 && state.tables.length > 0) ? '195' : '160'}px)">
+
+        <!-- Canvas zone -->
+        <div id="seating-scroll" style="flex:1;overflow:auto;background:var(--ivory-2);position:relative;cursor:default"
+             onclick="seatingDeselectAll(event)">
+          <div id="seating-canvas" style="position:relative;width:1400px;min-height:800px;transform-origin:top left;transform:scale(${seatingZoom})">
+            <!-- Room outline -->
+            <div style="position:absolute;inset:16px;border:2px dashed rgba(44,37,32,.1);border-radius:20px;pointer-events:none;z-index:0"></div>
+            <div style="position:absolute;top:22px;left:50%;transform:translateX(-50%);font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(44,37,32,.3);pointer-events:none;white-space:nowrap">— Salle de réception —</div>
+            ${seatingSnap ? buildSnapGrid() : ''}
             ${state.tables.map(table => renderTableNode(table)).join('')}
           </div>
+          <div style="position:sticky;bottom:.8rem;left:.8rem;display:inline-flex;gap:.4rem;z-index:10;pointer-events:none">
+            <span style="background:white;border:1px solid var(--border);border-radius:20px;padding:.3rem .7rem;font-size:.7rem;color:var(--muted)">
+              Cliquer pour sélectionner · Glisser pour déplacer
+            </span>
+          </div>
         </div>
-        <div style="position:absolute;bottom:1rem;right:1rem;font-size:.72rem;color:var(--muted);background:white;padding:.4rem .8rem;border-radius:20px;border:1px solid var(--border);pointer-events:none">
-          Glisser les tables pour les repositionner
+
+        <!-- Side panel -->
+        <div id="seating-panel" style="width:260px;flex-shrink:0;background:white;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+          <div id="seating-panel-content" style="flex:1;overflow-y:auto;padding:1.2rem">
+            <div style="text-align:center;padding:2rem 1rem;color:var(--muted)">
+              <div style="font-size:1.8rem;margin-bottom:.5rem;opacity:.3">🪑</div>
+              <div style="font-family:var(--font-display);font-size:1rem;font-weight:400;color:var(--charcoal-2);margin-bottom:.3rem">Sélectionner une table</div>
+              <div style="font-size:.78rem">Cliquez sur une table pour voir ses détails et options</div>
+            </div>
+          </div>
+          <div style="padding:1rem;border-top:1px solid var(--border)">
+            <div style="font-size:.72rem;color:var(--muted);margin-bottom:.6rem;letter-spacing:.06em;text-transform:uppercase">Légende des rôles</div>
+            ${[['invité','#4A3F38'],['famille-marié','#6B2D3E'],['famille-mariée','#8B3D52'],['témoin-marié','#C19B5E'],['demoiselle-honneur','#7A8C6E'],['enfant','#4A7C9F']].map(([role,color]) => `
+              <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
+                <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+                <span style="font-size:.72rem;color:var(--charcoal-2)">${role.replace('-', ' ')}</span>
+              </div>
+            `).join('')}
+          </div>
         </div>
       </div>
     `}
@@ -571,84 +605,68 @@ function renderSeating() {
   }
 }
 
+function buildSnapGrid() {
+  let lines = '';
+  for (let x = 0; x <= 1400; x += 40) {
+    lines += `<div style="position:absolute;left:${x}px;top:0;bottom:0;width:1px;background:rgba(44,37,32,.05);pointer-events:none"></div>`;
+  }
+  for (let y = 0; y <= 800; y += 40) {
+    lines += `<div style="position:absolute;top:${y}px;left:0;right:0;height:1px;background:rgba(44,37,32,.05);pointer-events:none"></div>`;
+  }
+  return lines;
+}
+
 function renderTableNode(table) {
   const pos = state.tablePositions[table.id] || autoPosition(table.id);
   const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
   const isRound = table.shape === 'ronde';
   const isLong = table.shape === 'longue';
+  const isRect = table.shape === 'rectangulaire';
+  const isSelected = seatingSelectedId === table.id;
 
-  const tableW = isLong ? 220 : isRound ? 140 : 180;
-  const tableH = isLong ? 80 : isRound ? 140 : 110;
+  const tableW = isLong ? 240 : isRound ? 130 : 170;
+  const tableH = isLong ? 75 : isRound ? 130 : 105;
+  const pad = 32;
 
-  // Draw seats around the table
-  const seats = buildSeats(table, tableGuests, tableW, tableH, isRound, isLong);
-
-  const guestListHTML = tableGuests.map(g => `
-    <div style="display:flex;align-items:center;gap:.35rem;padding:.18rem 0;border-bottom:1px solid rgba(44,37,32,.06);font-size:.68rem">
-      <div style="width:16px;height:16px;border-radius:50%;background:${roleColor(g.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;color:white;flex-shrink:0">${initials(g.firstname + ' ' + g.lastname)}</div>
-      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px">${g.firstname} ${g.lastname}</span>
-    </div>
-  `).join('');
-
-  const emptySeats = table.capacity - tableGuests.length;
+  const seats = buildSeats(table, tableGuests, tableW, tableH, isRound, isLong, pad);
+  const fill = Math.round(tableGuests.length / table.capacity * 100);
 
   return `
     <div class="seating-node" data-table-id="${table.id}"
-      style="position:absolute;left:${pos.x}px;top:${pos.y}px;z-index:2;cursor:grab;user-select:none"
-      title="${table.name}">
+      style="position:absolute;left:${pos.x}px;top:${pos.y}px;z-index:${isSelected ? 20 : 2};cursor:grab;user-select:none;transition:filter .15s"
+      onclick="seatingSelectTable(event, '${table.id}')">
 
-      <!-- Seat circles around table -->
-      <div style="position:relative;width:${tableW + 60}px;height:${tableH + 60}px">
+      <div style="position:relative;width:${tableW + pad * 2}px;height:${tableH + pad * 2}px">
         ${seats}
 
         <!-- Table surface -->
-        <div class="seating-table-surface" style="
+        <div style="
           position:absolute;
-          left:30px;top:30px;
+          left:${pad}px;top:${pad}px;
           width:${tableW}px;height:${tableH}px;
           background:white;
-          border:2px solid var(--gold);
-          border-radius:${isRound ? '50%' : isLong ? '8px' : '12px'};
+          border:${isSelected ? '2.5px solid var(--wine)' : '2px solid var(--gold)'};
+          border-radius:${isRound ? '50%' : isLong ? '10px' : '12px'};
           display:flex;flex-direction:column;align-items:center;justify-content:center;
-          box-shadow:0 4px 20px rgba(107,45,62,.12);
-          padding:.4rem;
+          box-shadow:${isSelected ? '0 0 0 4px rgba(107,45,62,.12), 0 6px 24px rgba(107,45,62,.18)' : '0 3px 14px rgba(107,45,62,.1)'};
+          padding:.3rem .5rem;
           text-align:center;
+          pointer-events:none;
         ">
-          <div style="font-family:var(--font-display);font-size:.82rem;font-weight:400;color:var(--charcoal);line-height:1.2;margin-bottom:.15rem">${table.name}</div>
-          <div style="font-size:.62rem;color:var(--gold);letter-spacing:.06em">${tableGuests.length}/${table.capacity}</div>
-        </div>
-      </div>
-
-      <!-- Tooltip on hover -->
-      <div class="seating-tooltip" style="
-        position:absolute;
-        top:${tableH + 70}px;left:50%;transform:translateX(-50%);
-        background:white;border:1px solid var(--border);border-radius:var(--radius);
-        padding:.6rem .8rem;min-width:160px;max-width:200px;
-        box-shadow:var(--shadow-lg);
-        z-index:100;
-        display:none;
-        pointer-events:none;
-      ">
-        <div style="font-family:var(--font-display);font-size:.9rem;font-weight:400;margin-bottom:.4rem;padding-bottom:.3rem;border-bottom:1px solid var(--border)">${table.name} <span style="font-size:.7rem;color:var(--gold)">${table.shape}</span></div>
-        ${guestListHTML}
-        ${emptySeats > 0 ? `<div style="font-size:.65rem;color:var(--muted);font-style:italic;margin-top:.3rem">${emptySeats} place${emptySeats > 1 ? 's' : ''} libre${emptySeats > 1 ? 's' : ''}</div>` : ''}
-        <div style="display:flex;gap:.3rem;margin-top:.5rem;pointer-events:all">
-          <button class="btn btn-sm btn-ghost" style="flex:1;font-size:.68rem" onclick="event.stopPropagation();openTableModal('${table.id}')">Modifier</button>
-          <button class="btn btn-sm btn-icon" style="color:#C0392B" onclick="event.stopPropagation();deleteTable('${table.id}')">
-            <svg viewBox="0 0 20 20" style="width:11px;height:11px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round"/></svg>
-          </button>
+          <div style="font-family:var(--font-display);font-size:${isLong ? '.75rem' : '.82rem'};font-weight:${isSelected ? 600 : 400};color:${isSelected ? 'var(--wine)' : 'var(--charcoal)'};line-height:1.2;margin-bottom:.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:${tableW - 12}px">${table.name}</div>
+          <div style="font-size:.6rem;color:${fill === 100 ? '#3A7D44' : 'var(--gold)'};letter-spacing:.04em">${tableGuests.length}/${table.capacity}</div>
+          ${fill === 100 ? '<div style="font-size:.55rem;color:#3A7D44;margin-top:.1rem">✓ complet</div>' : ''}
         </div>
       </div>
     </div>
   `;
 }
 
-function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong) {
+function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong, pad) {
   const total = table.capacity;
-  const seatSize = 28;
-  const cx = tableW / 2 + 30;
-  const cy = tableH / 2 + 30;
+  const seatSize = 26;
+  const cx = tableW / 2 + pad;
+  const cy = tableH / 2 + pad;
   let seats = '';
 
   for (let i = 0; i < total; i++) {
@@ -657,64 +675,73 @@ function buildSeats(table, tableGuests, tableW, tableH, isRound, isLong) {
 
     if (isRound) {
       const angle = (i / total) * 2 * Math.PI - Math.PI / 2;
-      const rx = tableW / 2 + 22;
-      const ry = tableH / 2 + 22;
+      const rx = tableW / 2 + 20;
+      const ry = tableH / 2 + 20;
       sx = cx + rx * Math.cos(angle) - seatSize / 2;
       sy = cy + ry * Math.sin(angle) - seatSize / 2;
     } else if (isLong) {
-      const perSide = Math.ceil(total / 2);
-      const side = i < perSide ? 0 : 1;
-      const idx = i < perSide ? i : i - perSide;
-      const spacing = tableW / (perSide + 1);
-      sx = 30 + spacing * (idx + 1) - seatSize / 2;
-      sy = side === 0 ? 30 - 24 : 30 + tableH - 4;
+      const topCount = Math.ceil(total / 2);
+      const botCount = total - topCount;
+      if (i < topCount) {
+        sx = pad + (tableW / (topCount + 1)) * (i + 1) - seatSize / 2;
+        sy = pad - seatSize - 4;
+      } else {
+        const j = i - topCount;
+        sx = pad + (tableW / (botCount + 1)) * (j + 1) - seatSize / 2;
+        sy = pad + tableH + 4;
+      }
     } else {
-      // Rectangular: distribute around
-      const perSide = Math.ceil(total / 4);
-      const side = Math.floor(i / perSide);
-      const idx = i % perSide;
-      const spacingX = tableW / (perSide + 1);
-      const spacingY = tableH / (perSide + 1);
-      if (side === 0) { sx = 30 + spacingX * (idx + 1) - seatSize / 2; sy = 30 - 24; }
-      else if (side === 1) { sx = 30 + tableW - 4; sy = 30 + spacingY * (idx + 1) - seatSize / 2; }
-      else if (side === 2) { sx = 30 + spacingX * (idx + 1) - seatSize / 2; sy = 30 + tableH - 4; }
-      else { sx = 30 - 24; sy = 30 + spacingY * (idx + 1) - seatSize / 2; }
+      // Rectangular: smart distribution on 4 sides
+      const sides = distributeSeatsSides(total);
+      let sideIdx = 0, posInSide = 0, counted = 0;
+      for (let s = 0; s < 4; s++) {
+        if (i < counted + sides[s]) { sideIdx = s; posInSide = i - counted; break; }
+        counted += sides[s];
+      }
+      const n = sides[sideIdx];
+      if (sideIdx === 0) { // top
+        sx = pad + (tableW / (n + 1)) * (posInSide + 1) - seatSize / 2;
+        sy = pad - seatSize - 4;
+      } else if (sideIdx === 1) { // right
+        sx = pad + tableW + 4;
+        sy = pad + (tableH / (n + 1)) * (posInSide + 1) - seatSize / 2;
+      } else if (sideIdx === 2) { // bottom
+        sx = pad + (tableW / (n + 1)) * (posInSide + 1) - seatSize / 2;
+        sy = pad + tableH + 4;
+      } else { // left
+        sx = pad - seatSize - 4;
+        sy = pad + (tableH / (n + 1)) * (posInSide + 1) - seatSize / 2;
+      }
     }
 
     const bg = guest ? roleColor(guest.role) : 'var(--ivory-3)';
     const label = guest ? initials(guest.firstname + ' ' + guest.lastname) : '';
     const title = guest ? `${guest.firstname} ${guest.lastname}` : 'Place libre';
 
-    seats += `
-      <div title="${title}" style="
-        position:absolute;
-        left:${sx}px;top:${sy}px;
-        width:${seatSize}px;height:${seatSize}px;
-        border-radius:50%;
-        background:${bg};
-        border:2px solid ${guest ? 'transparent' : 'var(--border-hover)'};
-        display:flex;align-items:center;justify-content:center;
-        font-size:.55rem;font-weight:600;color:${guest ? 'white' : 'var(--muted)'};
-        font-family:var(--font-body);
-        box-shadow:${guest ? '0 2px 6px rgba(0,0,0,.15)' : 'none'};
-        transition:transform .15s;
-        z-index:3;
-      ">${label}</div>
-    `;
+    seats += `<div title="${title}" style="position:absolute;left:${Math.round(sx)}px;top:${Math.round(sy)}px;width:${seatSize}px;height:${seatSize}px;border-radius:50%;background:${bg};border:2px solid ${guest ? 'rgba(255,255,255,.4)' : 'var(--border-hover)'};display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;color:${guest ? 'white' : 'var(--muted)'};font-family:var(--font-body);box-shadow:${guest ? '0 1px 4px rgba(0,0,0,.2)' : 'none'};z-index:3;pointer-events:none">${label}</div>`;
   }
   return seats;
 }
 
+function distributeSeatsSides(total) {
+  // Distribute seats on 4 sides of a rectangle as evenly as possible
+  const base = Math.floor(total / 4);
+  const rem = total % 4;
+  // top, right, bottom, left — put extras on top/bottom first
+  return [
+    base + (rem > 0 ? 1 : 0),
+    base + (rem > 3 ? 1 : 0),
+    base + (rem > 1 ? 1 : 0),
+    base + (rem > 2 ? 1 : 0),
+  ];
+}
+
 function roleColor(role) {
   const map = {
-    'témoin-marié': '#C19B5E',
-    'témoin-mariée': '#C19B5E',
-    'demoiselle-honneur': '#7A8C6E',
-    'garçon-honneur': '#7A8C6E',
-    'famille-marié': '#6B2D3E',
-    'famille-mariée': '#8B3D52',
-    'enfant': '#4A7C9F',
-    'invité': '#4A3F38',
+    'témoin-marié': '#C19B5E', 'témoin-mariée': '#C19B5E',
+    'demoiselle-honneur': '#7A8C6E', 'garçon-honneur': '#7A8C6E',
+    'famille-marié': '#6B2D3E', 'famille-mariée': '#8B3D52',
+    'enfant': '#4A7C9F', 'invité': '#4A3F38',
   };
   return map[role] || '#4A3F38';
 }
@@ -724,94 +751,213 @@ function autoPosition(tableId) {
   const cols = 3;
   const col = idx % cols;
   const row = Math.floor(idx / cols);
-  const pos = { x: 60 + col * 260, y: 60 + row * 260 };
+  const pos = { x: 60 + col * 280, y: 70 + row * 280 };
   state.tablePositions[tableId] = pos;
   return pos;
+}
+
+function seatingSelectTable(e, tableId) {
+  e.stopPropagation();
+  if (seatingSelectedId === tableId) return; // already selected, let drag work
+  seatingSelectedId = tableId;
+  refreshSeatingCanvas();
+  renderSeatingPanel(tableId);
+}
+
+function seatingDeselectAll(e) {
+  if (e.target.closest('.seating-node')) return;
+  seatingSelectedId = null;
+  refreshSeatingCanvas();
+  const panel = document.getElementById('seating-panel-content');
+  if (panel) panel.innerHTML = `
+    <div style="text-align:center;padding:2rem 1rem;color:var(--muted)">
+      <div style="font-size:1.8rem;margin-bottom:.5rem;opacity:.3">🪑</div>
+      <div style="font-family:var(--font-display);font-size:1rem;font-weight:400;color:var(--charcoal-2);margin-bottom:.3rem">Sélectionner une table</div>
+      <div style="font-size:.78rem">Cliquez sur une table pour voir ses détails et options</div>
+    </div>`;
+}
+
+function refreshSeatingCanvas() {
+  // Re-render only the table nodes without full page re-render
+  state.tables.forEach(table => {
+    const node = document.querySelector(`.seating-node[data-table-id="${table.id}"]`);
+    if (!node) return;
+    const pos = state.tablePositions[table.id] || autoPosition(table.id);
+    node.outerHTML; // read it
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = renderTableNode(table);
+    const newNode = tempDiv.firstElementChild;
+    // preserve position
+    newNode.style.left = node.style.left || pos.x + 'px';
+    newNode.style.top = node.style.top || pos.y + 'px';
+    node.parentNode.replaceChild(newNode, node);
+  });
+  initSeatingDrag();
+}
+
+function renderSeatingPanel(tableId) {
+  const table = state.tables.find(t => t.id === tableId);
+  if (!table) return;
+  const tableGuests = state.guests.filter(g => table.guests.includes(g.id));
+  const empty = table.capacity - tableGuests.length;
+  const panel = document.getElementById('seating-panel-content');
+  if (!panel) return;
+
+  const dietLabels = { végétarien: '🥗', végétalien: '🌱', halal: '☪️', 'sans-gluten': '🌾', autre: '⚠️' };
+  const roleLabels = {
+    'invité': 'Invité', 'témoin-marié': 'Témoin ♂', 'témoin-mariée': 'Témoin ♀',
+    'demoiselle-honneur': "Dem. d'honneur", 'garçon-honneur': "Garçon d'honneur",
+    'famille-marié': 'Famille Adil', 'famille-mariée': 'Famille Nadiya', 'enfant': 'Enfant',
+  };
+
+  panel.innerHTML = `
+    <div>
+      <!-- Table header -->
+      <div style="margin-bottom:1rem;padding-bottom:.8rem;border-bottom:1px solid var(--border)">
+        <div style="font-family:var(--font-display);font-size:1.3rem;font-weight:400;color:var(--charcoal);margin-bottom:.25rem">${table.name}</div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+          <span class="badge badge-gray">${table.shape}</span>
+          <span class="badge ${empty === 0 ? 'badge-green' : 'badge-gold'}">${tableGuests.length}/${table.capacity} places</span>
+          ${empty > 0 ? `<span class="badge badge-gray">${empty} libre${empty > 1 ? 's' : ''}</span>` : ''}
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:.4rem;margin-bottom:1rem">
+        <button class="btn btn-primary btn-sm" style="flex:1" onclick="openTableModal('${table.id}')">
+          <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M13.5 2.5L17.5 6.5L7 17H3v-4L13.5 2.5z" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Modifier
+        </button>
+        <button class="btn btn-ghost btn-sm" style="color:#C0392B;border-color:rgba(192,57,43,.3)" onclick="deleteTable('${table.id}')">
+          <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <!-- Guests list -->
+      <div style="font-size:.72rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem">Invités (${tableGuests.length})</div>
+
+      ${tableGuests.length === 0 ? `
+        <div style="font-size:.8rem;color:var(--muted);font-style:italic;text-align:center;padding:.8rem 0">Aucun invité assigné</div>
+      ` : tableGuests.map(g => `
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.45rem 0;border-bottom:1px solid var(--border)">
+          <div style="width:26px;height:26px;border-radius:50%;background:${roleColor(g.role)};display:flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:600;color:white;flex-shrink:0">${initials(g.firstname + ' ' + g.lastname)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.82rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.firstname} ${g.lastname}</div>
+            <div style="font-size:.68rem;color:var(--muted)">${roleLabels[g.role] || g.role}${g.diet !== 'standard' ? ` · ${dietLabels[g.diet] || ''} ${g.diet}` : ''}</div>
+          </div>
+          ${g.rsvp === 'confirmé' ? '<span style="color:#3A7D44;font-size:.75rem">✓</span>' : g.rsvp === 'décliné' ? '<span style="color:#C0392B;font-size:.75rem">✗</span>' : '<span style="color:var(--muted);font-size:.75rem">⏳</span>'}
+        </div>
+      `).join('')}
+
+      ${empty > 0 ? `
+        <div style="margin-top:.6rem">
+          ${Array.from({length: empty}).map(() => `
+            <div style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--border)">
+              <div style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--border-hover);flex-shrink:0"></div>
+              <div style="font-size:.78rem;color:var(--muted);font-style:italic">Place libre</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <!-- Dietary summary -->
+      ${tableGuests.some(g => g.diet !== 'standard') ? `
+        <div style="margin-top:1rem;padding:.6rem .8rem;background:var(--ivory-2);border-radius:var(--radius);font-size:.75rem">
+          <div style="font-weight:500;margin-bottom:.3rem;color:var(--charcoal-2)">Régimes alimentaires</div>
+          ${Object.entries(tableGuests.filter(g => g.diet !== 'standard').reduce((acc, g) => { acc[g.diet] = (acc[g.diet] || 0) + 1; return acc; }, {})).map(([diet, count]) => `
+            <div style="color:var(--charcoal-2)">${dietLabels[diet] || ''} ${diet} × ${count}</div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function seatingZoomIn() {
+  seatingZoom = Math.min(1.5, seatingZoom + 0.1);
+  const canvas = document.getElementById('seating-canvas');
+  if (canvas) canvas.style.transform = `scale(${seatingZoom})`;
+}
+
+function seatingZoomOut() {
+  seatingZoom = Math.max(0.4, seatingZoom - 0.1);
+  const canvas = document.getElementById('seating-canvas');
+  if (canvas) canvas.style.transform = `scale(${seatingZoom})`;
+}
+
+function seatingToggleSnap() {
+  seatingSnap = !seatingSnap;
+  const btn = document.getElementById('btn-snap');
+  if (btn) {
+    btn.style.background = seatingSnap ? 'var(--ivory-2)' : '';
+    btn.style.borderColor = seatingSnap ? 'var(--border-hover)' : '';
+    btn.style.fontWeight = seatingSnap ? '500' : '';
+  }
+  const canvas = document.getElementById('seating-canvas');
+  if (!canvas) return;
+  // rebuild grid
+  const existing = canvas.querySelector('.snap-grid');
+  if (existing) existing.remove();
+  if (seatingSnap) {
+    const grid = document.createElement('div');
+    grid.className = 'snap-grid';
+    grid.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:0';
+    grid.innerHTML = buildSnapGrid();
+    canvas.insertBefore(grid, canvas.firstChild);
+  }
 }
 
 function initSeatingDrag() {
   const nodes = document.querySelectorAll('.seating-node');
   nodes.forEach(node => {
     const tableId = node.dataset.tableId;
-
-    // Show tooltip on hover
-    node.addEventListener('mouseenter', () => {
-      const tt = node.querySelector('.seating-tooltip');
-      if (tt) tt.style.display = 'block';
-    });
-    node.addEventListener('mouseleave', () => {
-      const tt = node.querySelector('.seating-tooltip');
-      if (tt) tt.style.display = 'none';
-    });
-
-    // Drag
-    let dragging = false, startX, startY, origX, origY;
+    let dragging = false, startX, startY, origX, origY, moved = false;
 
     node.addEventListener('mousedown', e => {
-      if (e.target.closest('button') || e.target.closest('.seating-tooltip')) return;
+      if (e.target.closest('button')) return;
       dragging = true;
+      moved = false;
       startX = e.clientX;
       startY = e.clientY;
-      const pos = state.tablePositions[tableId] || { x: 0, y: 0 };
-      origX = pos.x;
-      origY = pos.y;
+      origX = parseInt(node.style.left) || 0;
+      origY = parseInt(node.style.top) || 0;
       node.style.cursor = 'grabbing';
       node.style.zIndex = 50;
       e.preventDefault();
     });
 
-    document.addEventListener('mousemove', e => {
+    const onMove = e => {
       if (!dragging) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
-      const newX = Math.max(0, origX + dx);
-      const newY = Math.max(0, origY + dy);
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      let newX = Math.max(0, origX + dx / seatingZoom);
+      let newY = Math.max(0, origY + dy / seatingZoom);
+      if (seatingSnap) {
+        newX = Math.round(newX / 40) * 40;
+        newY = Math.round(newY / 40) * 40;
+      }
       node.style.left = newX + 'px';
       node.style.top = newY + 'px';
-    });
+    };
 
-    document.addEventListener('mouseup', e => {
+    const onUp = e => {
       if (!dragging) return;
       dragging = false;
       node.style.cursor = 'grab';
-      node.style.zIndex = 2;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      const pos = state.tablePositions[tableId] || { x: 0, y: 0 };
-      state.tablePositions[tableId] = {
-        x: Math.max(0, pos.x + dx - (pos.x - origX - dx)),
-        y: Math.max(0, pos.y + dy - (pos.y - origY - dy)),
-      };
-      // Simpler: just use node's current offset
-      state.tablePositions[tableId] = {
-        x: parseInt(node.style.left),
-        y: parseInt(node.style.top),
-      };
-      save();
-    });
+      node.style.zIndex = seatingSelectedId === tableId ? 20 : 2;
+      if (moved) {
+        state.tablePositions[tableId] = {
+          x: parseInt(node.style.left),
+          y: parseInt(node.style.top),
+        };
+        save();
+      }
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   });
-}
-
-function toggleSeatingView() {
-  const btn = document.getElementById('seating-view-toggle');
-  const canvas = document.getElementById('seating-canvas-wrap');
-  const grid = document.getElementById('seating-list-view');
-
-  // Toggle between visual canvas and list view
-  if (canvas && canvas.style.display !== 'none') {
-    canvas.style.display = 'none';
-    // Insert list view
-    const listHTML = buildSeatingListView();
-    const wrap = document.createElement('div');
-    wrap.id = 'seating-list-view';
-    wrap.innerHTML = listHTML;
-    canvas.parentNode.insertBefore(wrap, canvas.nextSibling);
-    btn.textContent = 'Vue salle';
-  } else {
-    if (grid) grid.remove();
-    if (canvas) canvas.style.display = '';
-    btn.innerHTML = `<svg viewBox="0 0 20 20" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round"><rect x="2" y="3" width="7" height="7" rx="1"/><rect x="11" y="3" width="7" height="7" rx="1"/><rect x="2" y="11" width="7" height="7" rx="1"/><rect x="11" y="11" width="7" height="7" rx="1"/></svg> Vue liste`;
-  }
 }
 
 function buildSeatingListView() {
@@ -853,6 +999,7 @@ function buildSeatingListView() {
     </div>
   </div>`;
 }
+
 
 function openTableModal(id = null) {
   state.editingTableId = id;
