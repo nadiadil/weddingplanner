@@ -38,6 +38,8 @@ const state = {
   editingTableId: null,
   guestFilter: 'tous',
   taskFilter: 'tous',
+  jourjTasks: [],
+  jeux: [],
 };
 
 // ─── UTILS ────────────────────────────────────
@@ -79,6 +81,8 @@ function save() {
       seatOffsets: state.seatOffsets,
       marie1: state.marie1,
       marie2: state.marie2,
+      jourjTasks: state.jourjTasks,
+      jeux: state.jeux,
     };
     setDoc(DOC_REF, payload).catch(err => {
       console.error('Firestore save error:', err);
@@ -89,11 +93,13 @@ function save() {
 
 function applyRemoteData(data) {
   if (!data) return;
-  const keys = ['guests','tables','menuSections','budget','tasks','events','tablePositions','seatOffsets','marie1','marie2','menus'];
+  const keys = ['guests','tables','menuSections','budget','tasks','events','tablePositions','seatOffsets','marie1','marie2','menus','jourjTasks','jeux'];
   keys.forEach(k => { if (data[k] !== undefined) state[k] = data[k]; });
   if (!state.tablePositions) state.tablePositions = {};
   if (!state.seatOffsets) state.seatOffsets = {};
   if (!state.menus) state.menus = [];
+  if (!state.jourjTasks) state.jourjTasks = [];
+  if (!state.jeux) state.jeux = [];
   if (!state.marie1) state.marie1 = { id: 'marie-adil', firstname: 'Adil', lastname: '', role: 'marié', diet: 'standard', side: 'adil', rsvp: 'confirmé' };
   if (!state.marie2) state.marie2 = { id: 'marie-nadiya', firstname: 'Nadiya', lastname: '', role: 'mariée', diet: 'standard', side: 'nadiya', rsvp: 'confirmé' };
 }
@@ -198,6 +204,8 @@ function renderPage(page) {
     checklist: renderChecklist,
     planning: renderPlanning,
     maries: renderMaries,
+    jourj: renderJourJ,
+    jeux: renderJeux,
   };
   if (renderers[page]) renderers[page]();
 }
@@ -1033,8 +1041,9 @@ function initSeatingDrag() {
     const tableId = node.dataset.tableId;
     let dragging = false, startX, startY, origX, origY, moved = false;
 
-    node.addEventListener('mousedown', e => {
+    node.addEventListener('pointerdown', e => {
       if (e.target.closest('button') || e.target.closest('.draggable-seat')) return;
+      node.setPointerCapture(e.pointerId);
       dragging = true;
       moved = false;
       startX = e.clientX;
@@ -1069,8 +1078,9 @@ function initSeatingDrag() {
       }
     };
 
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    node.addEventListener('pointermove', onMove);
+    node.addEventListener('pointerup', onUp);
+    node.addEventListener('pointercancel', onUp);
   });
 
   // ── Seat drag: constrained to table perimeter ─
@@ -1079,9 +1089,11 @@ function initSeatingDrag() {
     const seatIdx = parseInt(seat.dataset.seatIdx);
     const key = tableId + ':' + seatIdx;
 
-    seat.addEventListener('mousedown', e => {
+    // Pointer events — works on Chrome, Safari, Firefox, mobile
+    seat.addEventListener('pointerdown', e => {
       e.stopPropagation();
       e.preventDefault();
+      seat.setPointerCapture(e.pointerId);
 
       const table = state.tables.find(t => t.id === tableId);
       if (!table) return;
@@ -1095,8 +1107,8 @@ function initSeatingDrag() {
       seat.style.cursor = 'grabbing';
       seat.style.zIndex = 60;
 
-      // Use dedicated handlers captured in closure — no global conflict
       function onMove(ev) {
+        if (ev.pointerId !== e.pointerId) return;
         const nodeRect = node.getBoundingClientRect();
         const mouseX = (ev.clientX - nodeRect.left) / seatingZoom;
         const mouseY = (ev.clientY - nodeRect.top) / seatingZoom;
@@ -1106,19 +1118,22 @@ function initSeatingDrag() {
         state.seatOffsets[key] = { angle: pos.angle };
       }
 
-      function onUp() {
+      function onUp(ev) {
+        if (ev.pointerId !== e.pointerId) return;
         seat.style.cursor = 'grab';
         seat.style.zIndex = 5;
         save();
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+        seat.removeEventListener('pointermove', onMove);
+        seat.removeEventListener('pointerup', onUp);
+        seat.removeEventListener('pointercancel', onUp);
       }
 
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      seat.addEventListener('pointermove', onMove);
+      seat.addEventListener('pointerup', onUp);
+      seat.addEventListener('pointercancel', onUp);
     });
 
-    // Double-click to reset
+    // Double-click / double-tap to reset
     seat.addEventListener('dblclick', e => {
       e.stopPropagation();
       delete state.seatOffsets[key];
@@ -1353,7 +1368,11 @@ function renderMenu() {
               ${(menu.sections || []).map((section) => `
                 <div style="border-bottom:1px solid var(--border)">
                   <!-- Section header -->
-                  <div style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--ivory-2);border-bottom:1px solid var(--border)">
+                  <div style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--ivory-2);border-bottom:1px solid var(--border)" data-section-id="${section.id}" data-menu-id="${menu.id}">
+                    <div style="display:flex;flex-direction:column;gap:1px;cursor:pointer;flex-shrink:0;opacity:.4" title="Monter/descendre">
+                      <button onclick="moveMenuSection('${menu.id}','${section.id}',-1)" style="background:none;border:none;color:var(--charcoal);cursor:pointer;font-size:.6rem;padding:0;line-height:1" title="Monter">▲</button>
+                      <button onclick="moveMenuSection('${menu.id}','${section.id}',1)" style="background:none;border:none;color:var(--charcoal);cursor:pointer;font-size:.6rem;padding:0;line-height:1" title="Descendre">▼</button>
+                    </div>
                     <input type="text" value="${section.name}" onchange="renameMenuSection('${menu.id}','${section.id}',this.value)"
                       style="flex:1;background:transparent;border:none;font-family:var(--font-display);font-size:.85rem;font-weight:400;color:var(--charcoal);outline:none;min-width:0;text-align:center"
                       placeholder="Rubrique...">
@@ -1456,6 +1475,18 @@ function renameMenuSection(menuId, sectionId, name) {
   if (!m) return;
   const s = m.sections.find(s => s.id === sectionId);
   if (s) { s.name = name; save(); }
+}
+
+function moveMenuSection(menuId, sectionId, dir) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (!m) return;
+  const idx = m.sections.findIndex(s => s.id === sectionId);
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= m.sections.length) return;
+  const tmp = m.sections[idx];
+  m.sections[idx] = m.sections[newIdx];
+  m.sections[newIdx] = tmp;
+  save(); renderMenu();
 }
 
 function addMenuItem(menuId, sectionId) {
@@ -2434,3 +2465,412 @@ window._fbReady = function(user) {
     toast('Erreur de connexion à la base de données.');
   });
 };
+
+// ─── JOUR J ────────────────────────────────────
+
+const JOURJ_CATEGORIES = ['cérémonie','cocktail','dîner','animation','logistique','photo','autre'];
+const JOURJ_STATUTS = ['à faire','en cours','fait'];
+
+function renderJourJ() {
+  const pg = document.getElementById('page-jourj');
+  const tasks = state.jourjTasks || [];
+
+  // Group by category
+  const byCat = {};
+  JOURJ_CATEGORIES.forEach(c => byCat[c] = []);
+  tasks.forEach(t => { if (!byCat[t.category]) byCat[t.category] = []; byCat[t.category].push(t); });
+
+  const statColor = { 'à faire': '#C19B5E', 'en cours': '#4A7C9F', 'fait': '#3A7D44' };
+  const statBadge = { 'à faire': 'badge-gold', 'en cours': 'badge-gray', 'fait': 'badge-green' };
+
+  pg.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Jour J</div>
+        <div class="page-subtitle">${tasks.length} tâche${tasks.length>1?'s':''} · ${tasks.filter(t=>t.statut==='fait').length} accomplies</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="openJourJModal()">
+          <svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
+          Nouvelle tâche
+        </button>
+      </div>
+    </div>
+
+    ${tasks.length > 0 ? `
+    <div style="padding:.4rem 2.5rem;border-bottom:1px solid var(--border);display:flex;gap:.5rem;flex-wrap:wrap;background:var(--ivory)">
+      ${JOURJ_CATEGORIES.filter(c => byCat[c].length > 0).map(c => `
+        <span class="badge badge-gray" style="cursor:pointer" onclick="document.getElementById('jourj-cat-${c}')?.scrollIntoView({behavior:'smooth'})">
+          ${c} <strong>${byCat[c].length}</strong>
+        </span>
+      `).join('')}
+    </div>` : ''}
+
+    <div class="page-body">
+      ${tasks.length === 0 ? `
+        <div class="empty-state">
+          <div class="empty-state-icon">📋</div>
+          <h4>Aucune tâche Jour J</h4>
+          <p>Planifiez les tâches de votre grand jour et assignez-les à vos invités.</p>
+        </div>
+      ` : JOURJ_CATEGORIES.filter(c => byCat[c].length > 0).map(cat => `
+        <div id="jourj-cat-${cat}" class="checklist-section">
+          <div class="checklist-section-title">${cat.charAt(0).toUpperCase()+cat.slice(1)}</div>
+          ${byCat[cat].map(task => {
+            const person = task.personId ? findPerson(task.personId) : null;
+            const jeu = task.jeuId ? state.jeux?.find(j => j.id === task.jeuId) : null;
+            return `
+              <div class="task-item ${task.statut==='fait'?'done':''}" style="gap:.6rem">
+                <div class="task-checkbox ${task.statut==='fait'?'checked':''}" onclick="cycleJourJStatut('${task.id}')"></div>
+                <div class="task-content" style="flex:1">
+                  <div class="task-name">${task.name}${jeu ? ` <span class="badge badge-gold" style="font-size:.65rem;margin-left:.3rem">🎮 ${jeu.name}</span>` : ''}</div>
+                  <div class="task-meta" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-top:.25rem">
+                    ${task.heure ? `<span style="font-weight:500;color:var(--charcoal-2)">${task.heure}</span>` : ''}
+                    <span class="badge ${statBadge[task.statut]||'badge-gray'}">${task.statut}</span>
+                    ${person ? `
+                      <span style="display:flex;align-items:center;gap:.3rem;font-size:.75rem;color:var(--charcoal-2)">
+                        <div style="width:18px;height:18px;border-radius:50%;background:${roleColor(person.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:600;color:white">${initials((person.firstname||'')+(person.lastname?' '+person.lastname:''))}</div>
+                        ${person.firstname} ${person.lastname||''}
+                      </span>` : ''}
+                    ${task.notes ? `<span style="font-size:.72rem;color:var(--muted);font-style:italic">${task.notes}</span>` : ''}
+                  </div>
+                </div>
+                <div style="display:flex;gap:.25rem">
+                  <button class="btn btn-sm btn-icon" onclick="openJourJModal('${task.id}')">
+                    <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M13.5 2.5L17.5 6.5L7 17H3v-4L13.5 2.5z" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  </button>
+                  <button class="btn btn-sm btn-icon" style="color:#C0392B" onclick="deleteJourJTask('${task.id}')">
+                    <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  </button>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>
+      `).join('')}
+    </div>
+
+    <!-- Modal Jour J -->
+    <div class="modal-overlay" id="jourj-overlay" onclick="closeJourJModal()" style="position:fixed;inset:0;background:rgba(44,37,32,.5);z-index:200;display:none;backdrop-filter:blur(2px)"></div>
+    <div id="jourj-modal" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(500px,94vw);background:white;border-radius:var(--radius-lg);z-index:210;box-shadow:var(--shadow-lg);display:none;flex-direction:column;max-height:90vh">
+      <div class="modal-header">
+        <h3 id="jourj-modal-title" style="font-family:var(--font-display);font-size:1.4rem;font-weight:400">Nouvelle tâche Jour J</h3>
+        <button class="modal-close" onclick="closeJourJModal()">×</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;padding:1.5rem">
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>Tâche *</label>
+            <input type="text" id="jourj-name" placeholder="Ex: Accueillir les invités">
+          </div>
+          <div class="form-group">
+            <label>Heure</label>
+            <input type="time" id="jourj-heure">
+          </div>
+          <div class="form-group">
+            <label>Catégorie</label>
+            <select id="jourj-category">
+              ${JOURJ_CATEGORIES.map(c => `<option value="${c}">${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Statut</label>
+            <select id="jourj-statut">
+              ${JOURJ_STATUTS.map(s => `<option value="${s}">${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Responsable</label>
+            <select id="jourj-person">
+              <option value="">— Personne assignée —</option>
+              ${allPeople().map(p => `<option value="${p.id}">${p.firstname} ${p.lastname||''} (${p.role})</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Mini-jeu associé</label>
+            <select id="jourj-jeu">
+              <option value="">— Aucun —</option>
+              ${(state.jeux||[]).map(j => `<option value="${j.id}">${j.name}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>Notes</label>
+            <textarea id="jourj-notes" placeholder="Détails, instructions..."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeJourJModal()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveJourJTask()">Enregistrer</button>
+      </div>
+    </div>
+  `;
+}
+
+let _editingJourJId = null;
+function openJourJModal(id = null) {
+  _editingJourJId = id;
+  const t = id ? state.jourjTasks.find(x => x.id === id) : null;
+  document.getElementById('jourj-modal-title').textContent = id ? 'Modifier la tâche' : 'Nouvelle tâche Jour J';
+  document.getElementById('jourj-name').value = t?.name || '';
+  document.getElementById('jourj-heure').value = t?.heure || '';
+  document.getElementById('jourj-category').value = t?.category || 'autre';
+  document.getElementById('jourj-statut').value = t?.statut || 'à faire';
+  document.getElementById('jourj-person').value = t?.personId || '';
+  document.getElementById('jourj-jeu').value = t?.jeuId || '';
+  document.getElementById('jourj-notes').value = t?.notes || '';
+  document.getElementById('jourj-modal').style.display = 'flex';
+  document.getElementById('jourj-overlay').style.display = 'block';
+}
+function closeJourJModal() {
+  document.getElementById('jourj-modal').style.display = 'none';
+  document.getElementById('jourj-overlay').style.display = 'none';
+}
+function saveJourJTask() {
+  const name = document.getElementById('jourj-name').value.trim();
+  if (!name) { toast('Veuillez nommer la tâche.'); return; }
+  const task = {
+    id: _editingJourJId || uid(),
+    name,
+    heure: document.getElementById('jourj-heure').value,
+    category: document.getElementById('jourj-category').value,
+    statut: document.getElementById('jourj-statut').value,
+    personId: document.getElementById('jourj-person').value || null,
+    jeuId: document.getElementById('jourj-jeu').value || null,
+    notes: document.getElementById('jourj-notes').value.trim(),
+  };
+  if (_editingJourJId) {
+    const idx = state.jourjTasks.findIndex(t => t.id === _editingJourJId);
+    state.jourjTasks[idx] = task;
+  } else {
+    state.jourjTasks.push(task);
+  }
+  save(); closeJourJModal();
+  toast(_editingJourJId ? 'Tâche mise à jour !' : 'Tâche ajoutée !');
+  renderJourJ();
+}
+function deleteJourJTask(id) {
+  if (!confirm('Supprimer cette tâche ?')) return;
+  state.jourjTasks = state.jourjTasks.filter(t => t.id !== id);
+  save(); renderJourJ(); toast('Tâche supprimée.');
+}
+function cycleJourJStatut(id) {
+  const t = state.jourjTasks.find(x => x.id === id);
+  if (!t) return;
+  const idx = JOURJ_STATUTS.indexOf(t.statut);
+  t.statut = JOURJ_STATUTS[(idx + 1) % JOURJ_STATUTS.length];
+  save(); renderJourJ();
+}
+
+// ─── MINI-JEUX ─────────────────────────────────
+
+const JEU_CATEGORIES = ['brise-glace','quiz','créatif','physique','musical','autre'];
+
+function renderJeux() {
+  const pg = document.getElementById('page-jeux');
+  const jeux = state.jeux || [];
+
+  pg.innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Mini-jeux</div>
+        <div class="page-subtitle">${jeux.length} jeu${jeux.length>1?'x':''} prévu${jeux.length>1?'s':''}</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" onclick="openJeuModal()">
+          <svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
+          Nouveau jeu
+        </button>
+      </div>
+    </div>
+
+    <div class="page-body">
+      ${jeux.length === 0 ? `
+        <div class="empty-state">
+          <div class="empty-state-icon">🎮</div>
+          <h4>Aucun mini-jeu</h4>
+          <p>Créez des activités pour divertir vos convives et assignez-les dans l'onglet Jour J.</p>
+        </div>
+      ` : `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem">
+          ${jeux.map(jeu => {
+            const jourjLinked = (state.jourjTasks||[]).filter(t => t.jeuId === jeu.id);
+            const responsable = jeu.personId ? findPerson(jeu.personId) : null;
+            return `
+              <div style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)">
+                <div style="background:var(--charcoal);padding:.9rem 1.2rem;display:flex;align-items:center;gap:.6rem">
+                  <div style="font-size:1.4rem">${jeu.emoji||'🎮'}</div>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-family:var(--font-display);font-size:1rem;font-weight:300;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${jeu.name}</div>
+                    <div style="font-size:.65rem;color:var(--gold-light);letter-spacing:.08em">${jeu.category}</div>
+                  </div>
+                  <div style="display:flex;gap:.3rem">
+                    <button class="btn btn-sm btn-icon" style="color:var(--gold-light);border-color:rgba(255,255,255,.2)" onclick="openJeuModal('${jeu.id}')">
+                      <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M13.5 2.5L17.5 6.5L7 17H3v-4L13.5 2.5z" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="btn btn-sm btn-icon" style="color:#E8A0A0;border-color:rgba(255,255,255,.2)" onclick="deleteJeu('${jeu.id}')">
+                      <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div style="padding:.9rem 1.2rem">
+                  ${jeu.description ? `<div style="font-size:.82rem;color:var(--charcoal-2);margin-bottom:.6rem;line-height:1.5">${jeu.description}</div>` : ''}
+                  <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem">
+                    ${jeu.duree ? `<span class="badge badge-gray">⏱ ${jeu.duree}</span>` : ''}
+                    ${jeu.nbJoueurs ? `<span class="badge badge-gray">👥 ${jeu.nbJoueurs}</span>` : ''}
+                    ${jeu.materiel ? `<span class="badge badge-gold">📦 Matériel requis</span>` : ''}
+                  </div>
+                  ${responsable ? `
+                    <div style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--charcoal-2);margin-bottom:.6rem">
+                      <div style="width:20px;height:20px;border-radius:50%;background:${roleColor(responsable.role)};display:flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:600;color:white">${initials((responsable.firstname||'')+(responsable.lastname?' '+responsable.lastname:''))}</div>
+                      Animé par ${responsable.firstname} ${responsable.lastname||''}
+                    </div>` : ''}
+                  <button class="btn btn-sm btn-ghost" style="width:100%;font-size:.72rem;margin-top:.3rem" onclick="addJourJFromJeu('${jeu.id}')">
+                    <svg viewBox="0 0 20 20" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round"><circle cx="10" cy="10" r="8"/><path d="M10 6v4l3 3"/></svg>
+                    Ajouter dans Jour J
+                  </button>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>
+      `}
+    </div>
+
+    <!-- Modal Jeu -->
+    <div class="modal-overlay" id="jeu-overlay" onclick="closeJeuModal()" style="position:fixed;inset:0;background:rgba(44,37,32,.5);z-index:200;display:none;backdrop-filter:blur(2px)"></div>
+    <div id="jeu-modal" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(520px,94vw);background:white;border-radius:var(--radius-lg);z-index:210;box-shadow:var(--shadow-lg);display:none;flex-direction:column;max-height:90vh">
+      <div class="modal-header">
+        <h3 id="jeu-modal-title" style="font-family:var(--font-display);font-size:1.4rem;font-weight:400">Nouveau mini-jeu</h3>
+        <button class="modal-close" onclick="closeJeuModal()">×</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;padding:1.5rem">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Nom du jeu *</label>
+            <input type="text" id="jeu-name" placeholder="Ex: Quiz du couple">
+          </div>
+          <div class="form-group">
+            <label>Emoji</label>
+            <input type="text" id="jeu-emoji" placeholder="🎮" maxlength="2" style="font-size:1.2rem;text-align:center">
+          </div>
+          <div class="form-group">
+            <label>Catégorie</label>
+            <select id="jeu-category">
+              ${JEU_CATEGORIES.map(c => `<option value="${c}">${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Durée estimée</label>
+            <input type="text" id="jeu-duree" placeholder="Ex: 15 min">
+          </div>
+          <div class="form-group">
+            <label>Nb de joueurs</label>
+            <input type="text" id="jeu-nb" placeholder="Ex: Tous ou 4-6">
+          </div>
+          <div class="form-group">
+            <label>Animateur</label>
+            <select id="jeu-person">
+              <option value="">— Non assigné —</option>
+              ${allPeople().map(p => `<option value="${p.id}">${p.firstname} ${p.lastname||''}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group full-width">
+            <label>Description / Règles</label>
+            <textarea id="jeu-description" placeholder="Comment ça se joue ?" style="min-height:80px"></textarea>
+          </div>
+          <div class="form-group full-width">
+            <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+              <input type="checkbox" id="jeu-materiel"> Matériel requis
+            </label>
+          </div>
+          <div class="form-group full-width" id="jeu-materiel-desc-wrap" style="display:none">
+            <label>Détail du matériel</label>
+            <input type="text" id="jeu-materiel-desc" placeholder="Ex: Papiers, stylos, timer...">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeJeuModal()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveJeu()">Enregistrer</button>
+      </div>
+    </div>
+  `;
+
+  // Toggle materiel field
+  const cb = document.getElementById('jeu-materiel');
+  if (cb) cb.addEventListener('change', () => {
+    document.getElementById('jeu-materiel-desc-wrap').style.display = cb.checked ? 'block' : 'none';
+  });
+}
+
+let _editingJeuId = null;
+function openJeuModal(id = null) {
+  _editingJeuId = id;
+  const j = id ? state.jeux.find(x => x.id === id) : null;
+  document.getElementById('jeu-modal-title').textContent = id ? 'Modifier le jeu' : 'Nouveau mini-jeu';
+  document.getElementById('jeu-name').value = j?.name || '';
+  document.getElementById('jeu-emoji').value = j?.emoji || '🎮';
+  document.getElementById('jeu-category').value = j?.category || 'autre';
+  document.getElementById('jeu-duree').value = j?.duree || '';
+  document.getElementById('jeu-nb').value = j?.nbJoueurs || '';
+  document.getElementById('jeu-person').value = j?.personId || '';
+  document.getElementById('jeu-description').value = j?.description || '';
+  document.getElementById('jeu-materiel').checked = j?.materiel || false;
+  document.getElementById('jeu-materiel-desc').value = j?.materielDesc || '';
+  document.getElementById('jeu-materiel-desc-wrap').style.display = j?.materiel ? 'block' : 'none';
+  document.getElementById('jeu-modal').style.display = 'flex';
+  document.getElementById('jeu-overlay').style.display = 'block';
+}
+function closeJeuModal() {
+  document.getElementById('jeu-modal').style.display = 'none';
+  document.getElementById('jeu-overlay').style.display = 'none';
+}
+function saveJeu() {
+  const name = document.getElementById('jeu-name').value.trim();
+  if (!name) { toast('Veuillez nommer le jeu.'); return; }
+  const hasMat = document.getElementById('jeu-materiel').checked;
+  const jeu = {
+    id: _editingJeuId || uid(),
+    name,
+    emoji: document.getElementById('jeu-emoji').value || '🎮',
+    category: document.getElementById('jeu-category').value,
+    duree: document.getElementById('jeu-duree').value.trim(),
+    nbJoueurs: document.getElementById('jeu-nb').value.trim(),
+    personId: document.getElementById('jeu-person').value || null,
+    description: document.getElementById('jeu-description').value.trim(),
+    materiel: hasMat,
+    materielDesc: hasMat ? document.getElementById('jeu-materiel-desc').value.trim() : '',
+  };
+  if (_editingJeuId) {
+    const idx = state.jeux.findIndex(j => j.id === _editingJeuId);
+    state.jeux[idx] = jeu;
+  } else {
+    state.jeux.push(jeu);
+  }
+  save(); closeJeuModal();
+  toast(_editingJeuId ? 'Jeu mis à jour !' : 'Jeu ajouté !');
+  renderJeux();
+}
+function deleteJeu(id) {
+  if (!confirm('Supprimer ce jeu ?')) return;
+  state.jeux = state.jeux.filter(j => j.id !== id);
+  // Remove jourj links
+  state.jourjTasks.forEach(t => { if (t.jeuId === id) t.jeuId = null; });
+  save(); renderJeux(); toast('Jeu supprimé.');
+}
+function addJourJFromJeu(jeuId) {
+  const jeu = state.jeux.find(j => j.id === jeuId);
+  if (!jeu) return;
+  state.jourjTasks.push({
+    id: uid(),
+    name: `Animation : ${jeu.name}`,
+    heure: '',
+    category: 'animation',
+    statut: 'à faire',
+    personId: jeu.personId || null,
+    jeuId: jeuId,
+    notes: jeu.description || '',
+  });
+  save();
+  toast(`"${jeu.name}" ajouté dans Jour J !`);
+  navigate('jourj');
+}
