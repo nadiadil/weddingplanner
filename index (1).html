@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adil & Nadiya — 26 juin 2026</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="monogram">A<span>&</span>N</div>
+      <p class="wedding-date">26 · VI · 2026</p>
+    </div>
+    <ul class="nav-links">
+      <li><a href="#" class="nav-link active" data-page="dashboard">
+        <svg viewBox="0 0 20 20"><path d="M3 10L10 3l7 7"/><path d="M5 8.5V17h4v-4h2v4h4V8.5"/></svg>
+        Tableau de bord
+      </a></li>
+      <li><a href="#" class="nav-link" data-page="guests">
+        <svg viewBox="0 0 20 20"><circle cx="8" cy="6" r="3"/><path d="M2 17c0-3.314 2.686-6 6-6s6 2.686 6 6"/><circle cx="15" cy="7" r="2"/><path d="M18 17c0-2.209-1.343-4-3-4"/></svg>
+        Invités
+      </a></li>
+      <li><a href="#" class="nav-link" data-page="seating">
+        <svg viewBox="0 0 20 20"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M6 7V5a2 2 0 014 0v2M10 7V5a2 2 0 014 0v2"/></svg>
+        Plan de table
+      </a></li>
+      <li><a href="#" class="nav-link" data-page="menu">
+        <svg viewBox="0 0 20 20"><path d="M4 3v14M4 8h8M12 3v5a4 4 0 010 8v1"/></svg>
+        Menu
+      </a></li>
+      <li><a href="#" class="nav-link" data-page="budget">
+        <svg viewBox="0 0 20 20"><path d="M10 2v2M10 16v2M4.93 4.93l1.41 1.41M13.66 13.66l1.41 1.41M2 10h2M16 10h2M4.93 15.07l1.41-1.41M13.66 6.34l1.41-1.41"/><circle cx="10" cy="10" r="4"/></svg>
+        Budget
+      </a></li>
+      <li><a href="#" class="nav-link" data-page="checklist">
+        <svg viewBox="0 0 20 20"><path d="M4 10l4 4 8-8"/></svg>
+        Checklist
+      </a></li>
+      <li><a href="#" class="nav-link" data-page="planning">
+        <svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="14" rx="2"/><path d="M3 8h14M8 4V2M12 4V2"/></svg>
+        Planning
+      </a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="countdown" id="sidebar-countdown"></div>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div id="page-dashboard" class="page active"></div>
+    <div id="page-guests" class="page"></div>
+    <div id="page-seating" class="page"></div>
+    <div id="page-menu" class="page"></div>
+    <div id="page-budget" class="page"></div>
+    <div id="page-checklist" class="page"></div>
+    <div id="page-planning" class="page"></div>
+  </main>
+
+  <!-- Modals -->
+  <div class="modal-overlay" id="modal-overlay"></div>
+  <div class="modal" id="guest-modal">
+    <div class="modal-header">
+      <h3 id="guest-modal-title">Ajouter un invité</h3>
+      <button class="modal-close" onclick="closeModal('guest-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Prénom *</label>
+          <input type="text" id="guest-firstname" placeholder="Prénom">
+        </div>
+        <div class="form-group">
+          <label>Nom *</label>
+          <input type="text" id="guest-lastname" placeholder="Nom">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="guest-email" placeholder="email@exemple.fr">
+        </div>
+        <div class="form-group">
+          <label>Téléphone</label>
+          <input type="tel" id="guest-phone" placeholder="+33 6 00 00 00 00">
+        </div>
+        <div class="form-group">
+          <label>Rôle</label>
+          <select id="guest-role">
+            <option value="invité">Invité</option>
+            <option value="témoin-marié">Témoin (marié)</option>
+            <option value="témoin-mariée">Témoin (mariée)</option>
+            <option value="demoiselle-honneur">Demoiselle d'honneur</option>
+            <option value="garçon-honneur">Garçon d'honneur</option>
+            <option value="famille-marié">Famille (marié)</option>
+            <option value="famille-mariée">Famille (mariée)</option>
+            <option value="enfant">Enfant</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Côté</label>
+          <select id="guest-side">
+            <option value="adil">Côté Adil</option>
+            <option value="nadiya">Côté Nadiya</option>
+            <option value="commun">Commun</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>RSVP</label>
+          <select id="guest-rsvp">
+            <option value="en-attente">En attente</option>
+            <option value="confirmé">Confirmé ✓</option>
+            <option value="décliné">Décliné ✗</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Régime alimentaire</label>
+          <select id="guest-diet">
+            <option value="standard">Standard</option>
+            <option value="végétarien">Végétarien</option>
+            <option value="végétalien">Végétalien</option>
+            <option value="halal">Halal</option>
+            <option value="sans-gluten">Sans gluten</option>
+            <option value="autre">Autre</option>
+          </select>
+        </div>
+        <div class="form-group full-width">
+          <label>Notes</label>
+          <textarea id="guest-notes" placeholder="Informations complémentaires..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('guest-modal')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveGuest()">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="modal modal-wide" id="table-modal">
+    <div class="modal-header">
+      <h3 id="table-modal-title">Nouvelle table</h3>
+      <button class="modal-close" onclick="closeModal('table-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Nom de la table</label>
+          <input type="text" id="table-name" placeholder="Ex: Table des mariés">
+        </div>
+        <div class="form-group">
+          <label>Capacité (places)</label>
+          <input type="number" id="table-capacity" min="2" max="20" value="8">
+        </div>
+        <div class="form-group">
+          <label>Forme</label>
+          <select id="table-shape">
+            <option value="ronde">Ronde</option>
+            <option value="rectangulaire">Rectangulaire</option>
+            <option value="longue">Longue (banquet)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:1rem">
+        <label>Assigner des invités</label>
+        <div class="guest-assign-list" id="guest-assign-list"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('table-modal')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveTable()">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="modal" id="budget-modal">
+    <div class="modal-header">
+      <h3>Ajouter une dépense</h3>
+      <button class="modal-close" onclick="closeModal('budget-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Catégorie</label>
+          <select id="budget-category">
+            <option value="salle">Salle & lieu</option>
+            <option value="traiteur">Traiteur & boissons</option>
+            <option value="musique">Musique & DJ</option>
+            <option value="photo">Photo & vidéo</option>
+            <option value="fleurs">Fleurs & décoration</option>
+            <option value="tenues">Tenues</option>
+            <option value="alliances">Alliances & bijoux</option>
+            <option value="transport">Transport</option>
+            <option value="invitations">Faire-part & papeterie</option>
+            <option value="lune-de-miel">Lune de miel</option>
+            <option value="autre">Autre</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="budget-desc" placeholder="Prestataire ou description">
+        </div>
+        <div class="form-group">
+          <label>Budget prévu (€)</label>
+          <input type="number" id="budget-planned" placeholder="0" min="0">
+        </div>
+        <div class="form-group">
+          <label>Montant payé (€)</label>
+          <input type="number" id="budget-paid" placeholder="0" min="0">
+        </div>
+        <div class="form-group">
+          <label>Statut</label>
+          <select id="budget-status">
+            <option value="prévu">Prévu</option>
+            <option value="déposé">Acompte versé</option>
+            <option value="payé">Payé</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('budget-modal')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveBudget()">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="modal" id="task-modal">
+    <div class="modal-header">
+      <h3>Ajouter une tâche</h3>
+      <button class="modal-close" onclick="closeModal('task-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Tâche *</label>
+          <input type="text" id="task-name" placeholder="Description de la tâche">
+        </div>
+        <div class="form-group">
+          <label>Catégorie</label>
+          <select id="task-category">
+            <option value="administratif">Administratif</option>
+            <option value="lieu">Lieu & salle</option>
+            <option value="prestataires">Prestataires</option>
+            <option value="tenues">Tenues</option>
+            <option value="décoration">Décoration</option>
+            <option value="invitations">Invitations</option>
+            <option value="voyage">Voyage & lune de miel</option>
+            <option value="autre">Autre</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Date limite</label>
+          <input type="date" id="task-due">
+        </div>
+        <div class="form-group">
+          <label>Priorité</label>
+          <select id="task-priority">
+            <option value="haute">Haute</option>
+            <option value="moyenne">Moyenne</option>
+            <option value="basse">Basse</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('task-modal')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveTask()">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="modal" id="event-modal">
+    <div class="modal-header">
+      <h3>Ajouter un événement</h3>
+      <button class="modal-close" onclick="closeModal('event-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Événement *</label>
+          <input type="text" id="event-name" placeholder="Ex: Cérémonie civile">
+        </div>
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="event-date">
+        </div>
+        <div class="form-group">
+          <label>Heure</label>
+          <input type="time" id="event-time">
+        </div>
+        <div class="form-group">
+          <label>Lieu</label>
+          <input type="text" id="event-location" placeholder="Adresse ou lieu">
+        </div>
+        <div class="form-group full-width">
+          <label>Notes</label>
+          <textarea id="event-notes" placeholder="Détails supplémentaires..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('event-modal')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveEvent()">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
