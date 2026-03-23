@@ -26,7 +26,6 @@ const state = {
     { id: 'desserts', name: 'Desserts & Pièce montée', icon: '🎂', items: [] },
     { id: 'boissons', name: 'Boissons', icon: '🍾', items: [] },
   ],
-  budget: [],
   tasks: [],
   events: [
     { id: uid(), name: 'Cérémonie civile', date: '2026-06-26', time: '11:00', location: 'Mairie', notes: '' },
@@ -198,7 +197,6 @@ function save() {
       tables: state.tables,
       menuSections: state.menuSections,
       menus: state.menus,
-      budget: state.budget,
       tasks: state.tasks,
       events: state.events,
       tablePositions: state.tablePositions,
@@ -218,7 +216,7 @@ function save() {
 
 function applyRemoteData(data) {
   if (!data) return;
-  const keys = ['guests','tables','menuSections','budget','tasks','events','tablePositions','seatOffsets','marie1','marie2','menus','jourjTasks','jeux','rappels'];
+  const keys = ['guests','tables','menuSections','tasks','events','tablePositions','seatOffsets','marie1','marie2','menus','jourjTasks','jeux','rappels'];
   keys.forEach(k => { if (data[k] !== undefined) state[k] = data[k]; });
   if (!state.tablePositions) state.tablePositions = {};
   if (!state.seatOffsets) state.seatOffsets = {};
@@ -326,7 +324,6 @@ function renderPage(page) {
     guests: renderGuests,
     seating: renderSeating,
     menu: renderMenu,
-    budget: renderBudget,
     checklist: renderChecklist,
     planning: renderPlanning,
     maries: renderMaries,
@@ -362,8 +359,6 @@ function renderDashboard() {
   const total = state.guests.length;
   const doneTasks = state.tasks.filter(t => t.done).length;
   const totalTasks = state.tasks.length;
-  const totalBudget = state.budget.reduce((s, b) => s + (b.planned || 0), 0);
-  const paidBudget = state.budget.reduce((s, b) => s + (b.paid || 0), 0);
   const days = daysUntil();
 
   const nextTask = state.tasks.filter(t => !t.done && t.due).sort((a, b) => a.due.localeCompare(b.due))[0];
@@ -388,11 +383,7 @@ function renderDashboard() {
           <div class="stat-value">${total}</div>
           <div class="stat-meta">${confirmed} confirmé${confirmed>1?'s':''} · ${pending} en attente</div>
         </div>
-        <div class="stat-card" style="cursor:pointer" onclick="navigate('budget')">
-          <div class="stat-label">Budget prévu</div>
-          <div class="stat-value">${totalBudget > 0 ? totalBudget.toLocaleString('fr-FR') + ' €' : '—'}</div>
-          <div class="stat-meta">${paidBudget > 0 ? paidBudget.toLocaleString('fr-FR') + ' € réglés' : 'Aucun paiement'}</div>
-        </div>
+
         <div class="stat-card" style="cursor:pointer" onclick="navigate('checklist')">
           <div class="stat-label">Tâches</div>
           <div class="stat-value">${doneTasks}/${totalTasks}</div>
@@ -1642,164 +1633,6 @@ function deleteMenuItem(menuId, sectionId, idx) {
   if (!s) return;
   s.items.splice(idx, 1);
   save(); renderMenu();
-}
-
-// ─── BUDGET ────────────────────────────────────
-function renderBudget() {
-  const pg = document.getElementById('page-budget');
-  const total = state.budget.reduce((s, b) => s + (b.planned || 0), 0);
-  const paid = state.budget.reduce((s, b) => s + (b.paid || 0), 0);
-  const remaining = total - paid;
-
-  const byCategory = {};
-  state.budget.forEach(b => {
-    if (!byCategory[b.category]) byCategory[b.category] = { planned: 0, paid: 0 };
-    byCategory[b.category].planned += b.planned || 0;
-    byCategory[b.category].paid += b.paid || 0;
-  });
-
-  const categoryColors = {
-    salle: '#6B2D3E', traiteur: '#C19B5E', musique: '#7A8C6E', photo: '#4A7C9F',
-    fleurs: '#9B7DB8', tenues: '#E27D5F', alliances: '#C19B5E', transport: '#8A7D74',
-    invitations: '#5A8A7A', 'lune-de-miel': '#D4607A', autre: '#888',
-  };
-
-  const categoryLabels = {
-    salle: 'Salle & lieu', traiteur: 'Traiteur', musique: 'Musique & DJ', photo: 'Photo & vidéo',
-    fleurs: 'Décoration', tenues: 'Tenues', alliances: 'Alliances', transport: 'Transport',
-    invitations: 'Papeterie', 'lune-de-miel': 'Lune de miel', autre: 'Autre',
-  };
-
-  pg.innerHTML = `
-    <div class="page-header">
-      <div>
-        <div class="page-title">Budget</div>
-        <div class="page-subtitle">Suivi des dépenses du mariage</div>
-      </div>
-      <div class="page-actions">
-        <button class="btn btn-primary" onclick="openBudgetModal()">
-          <svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
-          Ajouter une dépense
-        </button>
-      </div>
-    </div>
-    <div class="page-body">
-      <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:2rem">
-        <div class="stat-card">
-          <div class="stat-label">Budget total prévu</div>
-          <div class="stat-value" style="font-size:1.6rem">${total.toLocaleString('fr-FR')} €</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Montant payé</div>
-          <div class="stat-value" style="font-size:1.6rem;color:var(--sage)">${paid.toLocaleString('fr-FR')} €</div>
-          <div class="progress-bar" style="margin-top:.5rem"><div class="progress-fill" style="width:${total > 0 ? Math.round(paid/total*100) : 0}%"></div></div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Reste à payer</div>
-          <div class="stat-value" style="font-size:1.6rem;color:var(--wine)">${remaining.toLocaleString('fr-FR')} €</div>
-        </div>
-      </div>
-
-      ${Object.keys(byCategory).length > 0 ? `
-        <div style="margin-bottom:1.5rem">
-          <div class="section-title">Par catégorie</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.7rem">
-            ${Object.entries(byCategory).map(([cat, data]) => `
-              <div class="stat-card" style="padding:.9rem 1.1rem">
-                <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
-                  <div style="width:10px;height:10px;border-radius:2px;background:${categoryColors[cat] || '#888'};flex-shrink:0"></div>
-                  <div class="stat-label" style="margin:0">${categoryLabels[cat] || cat}</div>
-                </div>
-                <div style="font-size:1.1rem;font-family:var(--font-display);font-weight:400">${data.planned.toLocaleString('fr-FR')} €</div>
-                <div class="progress-bar" style="margin-top:.4rem"><div class="progress-fill" style="width:${data.planned > 0 ? Math.round(data.paid/data.planned*100) : 0}%;background:${categoryColors[cat] || '#888'}"></div></div>
-                <div style="font-size:.72rem;color:var(--muted);margin-top:.3rem">${data.paid.toLocaleString('fr-FR')} € payés</div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      ` : ''}
-
-      <div class="section-title">Dépenses détaillées</div>
-      ${state.budget.length === 0 ? `
-        <div class="empty-state">
-          <div class="empty-state-icon">💰</div>
-          <h4>Aucune dépense enregistrée</h4>
-          <p>Ajoutez vos premières lignes budgétaires.</p>
-        </div>
-      ` : `
-        <div class="table-card">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Catégorie</th>
-                <th>Description</th>
-                <th>Prévu</th>
-                <th>Payé</th>
-                <th>Reste</th>
-                <th>Statut</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${state.budget.map((b, i) => {
-                const rest = (b.planned || 0) - (b.paid || 0);
-                const statusMap = { prévu: ['Prévu', 'badge-gray'], déposé: ['Acompte', 'badge-gold'], payé: ['Payé ✓', 'badge-green'] };
-                const [statusLabel, statusCls] = statusMap[b.status] || ['?', 'badge-gray'];
-                return `
-                  <tr>
-                    <td>
-                      <div style="display:flex;align-items:center;gap:.5rem">
-                        <div style="width:8px;height:8px;border-radius:2px;background:${categoryColors[b.category] || '#888'};flex-shrink:0"></div>
-                        <span style="font-size:.8rem">${categoryLabels[b.category] || b.category}</span>
-                      </div>
-                    </td>
-                    <td style="font-weight:400">${b.desc}</td>
-                    <td style="font-weight:500">${(b.planned || 0).toLocaleString('fr-FR')} €</td>
-                    <td style="color:var(--sage)">${(b.paid || 0).toLocaleString('fr-FR')} €</td>
-                    <td style="color:${rest > 0 ? 'var(--wine)' : 'var(--sage)'}">${rest.toLocaleString('fr-FR')} €</td>
-                    <td><span class="badge ${statusCls}">${statusLabel}</span></td>
-                    <td>
-                      <button class="btn btn-sm btn-icon" onclick="deleteBudget(${i})" style="color:#C0392B">
-                        <svg viewBox="0 0 20 20" style="width:12px;height:12px"><path d="M4 6h12M8 6V4h4v2M7 6v10h6V6"/></svg>
-                      </button>
-                    </td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      `}
-    </div>
-  `;
-}
-
-function openBudgetModal() { openModal('budget-modal'); }
-
-function saveBudget() {
-  const desc = document.getElementById('budget-desc').value.trim();
-  if (!desc) { toast('Veuillez décrire la dépense.'); return; }
-  state.budget.push({
-    category: document.getElementById('budget-category').value,
-    desc,
-    planned: parseFloat(document.getElementById('budget-planned').value) || 0,
-    paid: parseFloat(document.getElementById('budget-paid').value) || 0,
-    status: document.getElementById('budget-status').value,
-  });
-  save();
-  closeModal('budget-modal');
-  document.getElementById('budget-desc').value = '';
-  document.getElementById('budget-planned').value = '';
-  document.getElementById('budget-paid').value = '';
-  toast('Dépense ajoutée !');
-  renderBudget();
-}
-
-function deleteBudget(idx) {
-  if (!confirm('Supprimer cette ligne ?')) return;
-  state.budget.splice(idx, 1);
-  save();
-  renderBudget();
 }
 
 // ─── CHECKLIST ─────────────────────────────────

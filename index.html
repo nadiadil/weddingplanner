@@ -31,10 +31,7 @@
         <svg viewBox="0 0 20 20"><path d="M4 3v14M4 8h8M12 3v5a4 4 0 010 8v1"/></svg>
         Menu
       </a></li>
-      <li><a href="#" class="nav-link" data-page="budget">
-        <svg viewBox="0 0 20 20"><path d="M10 2v2M10 16v2M4.93 4.93l1.41 1.41M13.66 13.66l1.41 1.41M2 10h2M16 10h2M4.93 15.07l1.41-1.41M13.66 6.34l1.41-1.41"/><circle cx="10" cy="10" r="4"/></svg>
-        Budget
-      </a></li>
+
       <li><a href="#" class="nav-link" data-page="checklist">
         <svg viewBox="0 0 20 20"><path d="M4 10l4 4 8-8"/></svg>
         Checklist
@@ -74,7 +71,7 @@
     <div id="page-guests" class="page"></div>
     <div id="page-seating" class="page"></div>
     <div id="page-menu" class="page"></div>
-    <div id="page-budget" class="page"></div>
+
     <div id="page-checklist" class="page"></div>
     <div id="page-planning" class="page"></div>
     <div id="page-maries" class="page"></div>
@@ -194,57 +191,6 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('table-modal')">Annuler</button>
       <button class="btn btn-primary" onclick="saveTable()">Enregistrer</button>
-    </div>
-  </div>
-
-  <div class="modal" id="budget-modal">
-    <div class="modal-header">
-      <h3>Ajouter une dépense</h3>
-      <button class="modal-close" onclick="closeModal('budget-modal')">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Catégorie</label>
-          <select id="budget-category">
-            <option value="salle">Salle & lieu</option>
-            <option value="traiteur">Traiteur & boissons</option>
-            <option value="musique">Musique & DJ</option>
-            <option value="photo">Photo & vidéo</option>
-            <option value="fleurs">Fleurs & décoration</option>
-            <option value="tenues">Tenues</option>
-            <option value="alliances">Alliances & bijoux</option>
-            <option value="transport">Transport</option>
-            <option value="invitations">Faire-part & papeterie</option>
-            <option value="lune-de-miel">Lune de miel</option>
-            <option value="autre">Autre</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Description</label>
-          <input type="text" id="budget-desc" placeholder="Prestataire ou description">
-        </div>
-        <div class="form-group">
-          <label>Budget prévu (€)</label>
-          <input type="number" id="budget-planned" placeholder="0" min="0">
-        </div>
-        <div class="form-group">
-          <label>Montant payé (€)</label>
-          <input type="number" id="budget-paid" placeholder="0" min="0">
-        </div>
-        <div class="form-group">
-          <label>Statut</label>
-          <select id="budget-status">
-            <option value="prévu">Prévu</option>
-            <option value="déposé">Acompte versé</option>
-            <option value="payé">Payé</option>
-          </select>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('budget-modal')">Annuler</button>
-      <button class="btn btn-primary" onclick="saveBudget()">Enregistrer</button>
     </div>
   </div>
 
