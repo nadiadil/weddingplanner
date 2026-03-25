@@ -1418,6 +1418,101 @@ function deleteTable(id) {
 }
 
 // ─── MENU ─────────────────────────────────────
+function buildMenuCard(menu) {
+  return `
+    <div class="menu-card" data-menu-id="${menu.id}" style="
+      background:white;border:1px solid var(--border);border-radius:var(--radius-lg);
+      box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;min-height:0;
+    ">
+      <!-- Card header -->
+      <div style="background:var(--charcoal);padding:.6rem 1rem;display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+        <input type="text" value="${menu.name}" onchange="renameMenu('${menu.id}', this.value)"
+          style="background:transparent;border:none;color:white;font-family:var(--font-display);font-size:1rem;font-weight:300;flex:1;outline:none;letter-spacing:.02em;min-width:0"
+          placeholder="Nom de la carte...">
+        <input type="text" value="${menu.lang}" onchange="setMenuLang('${menu.id}', this.value)"
+          style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:var(--gold-light);border-radius:4px;width:40px;text-align:center;font-size:.72rem;padding:.15rem .3rem;outline:none;font-family:var(--font-body);letter-spacing:.1em;flex-shrink:0"
+          placeholder="FR" title="Langue">
+        <button onclick="exportCardPDF('${menu.id}')" title="Exporter en PDF"
+          style="background:rgba(193,155,94,.2);border:1px solid rgba(193,155,94,.4);color:var(--gold-light);border-radius:4px;padding:.2rem .5rem;cursor:pointer;font-size:.65rem;font-family:var(--font-body);letter-spacing:.06em;display:flex;align-items:center;gap:.25rem;flex-shrink:0;white-space:nowrap">
+          <svg viewBox="0 0 20 20" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round"><path d="M4 4h8l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M12 4v4h4M10 9v6M7 12l3 3 3-3"/></svg>
+          PDF
+        </button>
+        <button onclick="duplicateMenu('${menu.id}')" title="Dupliquer cette carte"
+          style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6);border-radius:4px;padding:.2rem .45rem;cursor:pointer;font-size:.72rem;font-family:var(--font-body);flex-shrink:0;white-space:nowrap;letter-spacing:.03em" title="Copier">
+          ⧉
+        </button>
+        <button onclick="addMenuSection('${menu.id}')" title="Ajouter une rubrique"
+          style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.5);border-radius:4px;padding:.2rem .4rem;cursor:pointer;font-size:.9rem;line-height:1;flex-shrink:0">+</button>
+        ${state.menus.length > 1 ? `<button onclick="deleteMenu('${menu.id}')" title="Supprimer"
+          style="background:transparent;border:none;color:#E8A0A0;cursor:pointer;font-size:.9rem;padding:.1rem .2rem;flex-shrink:0;line-height:1">×</button>` : ''}
+      </div>
+
+      <!-- Card body -->
+      <div style="flex:1;overflow-y:auto;min-height:0">
+        ${(menu.sections || []).map((section) => `
+          <div style="border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--ivory-2);border-bottom:1px solid var(--border)">
+              <div style="display:flex;flex-direction:column;gap:1px;cursor:pointer;flex-shrink:0;opacity:.4">
+                <button onclick="moveMenuSection('${menu.id}','${section.id}',-1)" style="background:none;border:none;color:var(--charcoal);cursor:pointer;font-size:.6rem;padding:0;line-height:1">▲</button>
+                <button onclick="moveMenuSection('${menu.id}','${section.id}',1)" style="background:none;border:none;color:var(--charcoal);cursor:pointer;font-size:.6rem;padding:0;line-height:1">▼</button>
+              </div>
+              <input type="text" value="${section.name}" onchange="renameMenuSection('${menu.id}','${section.id}',this.value)"
+                style="flex:1;background:transparent;border:none;font-family:var(--font-display);font-size:.85rem;font-weight:400;color:var(--charcoal);outline:none;min-width:0;text-align:center"
+                placeholder="Rubrique...">
+              <button onclick="addMenuItem('${menu.id}','${section.id}')"
+                style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:.72rem;font-family:var(--font-body);white-space:nowrap;padding:0;flex-shrink:0">+ Plat</button>
+              ${(menu.sections||[]).length > 1 ? `<button onclick="deleteMenuSection('${menu.id}','${section.id}')"
+                style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0 .1rem;flex-shrink:0">×</button>` : ''}
+            </div>
+            ${section.items.length === 0
+              ? '<div style="padding:.3rem .8rem;font-size:.72rem;color:var(--muted);font-style:italic">Vide — cliquez sur + Plat</div>'
+              : section.items.map((item, ii) => `
+                <div style="display:flex;flex-direction:column;align-items:center;gap:.15rem;padding:.4rem .8rem;border-bottom:1px solid rgba(44,37,32,.05);text-align:center"
+                  onmouseover="this.style.background='var(--ivory)'" onmouseout="this.style.background=''">
+                  <input type="text" value="${item.name}" oninput="updateMenuItem('${menu.id}','${section.id}',${ii},'name',this.value)"
+                    style="border:none;border-bottom:1px solid transparent;font-size:.78rem;font-weight:500;color:var(--charcoal);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);text-align:center;width:100%"
+                    onfocus="this.style.borderBottomColor='var(--gold)'" onblur="this.style.borderBottomColor='transparent'"
+                    placeholder="Nom du plat">
+                  <input type="text" value="${item.desc||''}" oninput="updateMenuItem('${menu.id}','${section.id}',${ii},'desc',this.value)"
+                    style="border:none;border-bottom:1px solid transparent;font-size:.72rem;color:var(--muted);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);text-align:center;width:100%"
+                    onfocus="this.style.borderBottomColor='var(--gold)'" onblur="this.style.borderBottomColor='transparent'"
+                    placeholder="Description...">
+                  <div style="display:flex;align-items:center;gap:.6rem;justify-content:center">
+                    <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--sage);cursor:pointer;white-space:nowrap">
+                      <input type="checkbox" ${item.vege?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'vege',this.checked)" style="accent-color:var(--sage);width:11px;height:11px"> Végé
+                    </label>
+                    <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--gold);cursor:pointer;white-space:nowrap">
+                      <input type="checkbox" ${item.halal?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'halal',this.checked)" style="accent-color:var(--gold);width:11px;height:11px"> Halal
+                    </label>
+                    <button onclick="deleteMenuItem('${menu.id}','${section.id}',${ii})"
+                      style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0;line-height:1">×</button>
+                  </div>
+                </div>
+              `).join('')}
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+// Re-render only the changed card — preserves scroll position
+function refreshMenuCard(menuId) {
+  const existing = document.querySelector(`.menu-card[data-menu-id="${menuId}"]`);
+  const menu = state.menus.find(m => m.id === menuId);
+  if (!existing || !menu) { renderMenu(); return; }
+  // Capture scroll position of card body
+  const body = existing.querySelector('[style*="overflow-y:auto"]');
+  const scrollTop = body ? body.scrollTop : 0;
+  // Replace card HTML
+  const tmp = document.createElement('div');
+  tmp.innerHTML = buildMenuCard(menu);
+  const newCard = tmp.firstElementChild;
+  existing.parentNode.replaceChild(newCard, existing);
+  // Restore scroll
+  const newBody = newCard.querySelector('[style*="overflow-y:auto"]');
+  if (newBody) newBody.scrollTop = scrollTop;
+}
+
 function renderMenu() {
   const pg = document.getElementById('page-menu');
   if (!state.menus || state.menus.length === 0) {
@@ -1445,100 +1540,17 @@ function renderMenu() {
     </div>
     <div style="padding:1.2rem 2rem;height:calc(100vh - 90px);box-sizing:border-box;overflow:hidden">
       <div id="cards-grid" style="
-        display:grid;
-        grid-template-columns:repeat(3,1fr);
-        grid-template-rows:repeat(2,1fr);
-        gap:1rem;
-        height:100%;
+        display:grid;grid-template-columns:repeat(3,1fr);
+        grid-template-rows:repeat(2,1fr);gap:1rem;height:100%;
       ">
-        ${state.menus.slice(0,6).map((menu) => `
-          <div class="menu-card" style="
-            background:white;
-            border:1px solid var(--border);
-            border-radius:var(--radius-lg);
-            box-shadow:var(--shadow);
-            overflow:hidden;
-            display:flex;
-            flex-direction:column;
-            min-height:0;
-          ">
-            <!-- Card header -->
-            <div style="background:var(--charcoal);padding:.6rem 1rem;display:flex;align-items:center;gap:.5rem;flex-shrink:0">
-              <input type="text" value="${menu.name}" onchange="renameMenu('${menu.id}', this.value)"
-                style="background:transparent;border:none;color:white;font-family:var(--font-display);font-size:1rem;font-weight:300;flex:1;outline:none;letter-spacing:.02em;min-width:0"
-                placeholder="Nom de la carte...">
-              <input type="text" value="${menu.lang}" onchange="setMenuLang('${menu.id}', this.value)"
-                style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:var(--gold-light);border-radius:4px;width:40px;text-align:center;font-size:.72rem;padding:.15rem .3rem;outline:none;font-family:var(--font-body);letter-spacing:.1em;flex-shrink:0"
-                placeholder="FR" title="Langue">
-              <!-- PDF export button -->
-              <button onclick="exportCardPDF('${menu.id}')" title="Exporter en PDF"
-                style="background:rgba(193,155,94,.2);border:1px solid rgba(193,155,94,.4);color:var(--gold-light);border-radius:4px;padding:.2rem .5rem;cursor:pointer;font-size:.65rem;font-family:var(--font-body);letter-spacing:.06em;display:flex;align-items:center;gap:.25rem;flex-shrink:0;white-space:nowrap">
-                <svg viewBox="0 0 20 20" style="width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round"><path d="M4 4h8l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M12 4v4h4M10 9v6M7 12l3 3 3-3"/></svg>
-                PDF
-              </button>
-              <button onclick="addMenuSection('${menu.id}')" title="Ajouter une rubrique"
-                style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.5);border-radius:4px;padding:.2rem .4rem;cursor:pointer;font-size:.9rem;line-height:1;flex-shrink:0">+</button>
-              ${state.menus.length > 1 ? `<button onclick="deleteMenu('${menu.id}')" title="Supprimer"
-                style="background:transparent;border:none;color:#E8A0A0;cursor:pointer;font-size:.9rem;padding:.1rem .2rem;flex-shrink:0;line-height:1">×</button>` : ''}
-            </div>
-
-            <!-- Card body: scrollable sections -->
-            <div style="flex:1;overflow-y:auto;min-height:0">
-              ${(menu.sections || []).map((section) => `
-                <div style="border-bottom:1px solid var(--border)">
-                  <!-- Section header -->
-                  <div style="display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;background:var(--ivory-2);border-bottom:1px solid var(--border)" data-section-id="${section.id}" data-menu-id="${menu.id}">
-                    <div style="display:flex;flex-direction:column;gap:1px;cursor:pointer;flex-shrink:0;opacity:.4" title="Monter/descendre">
-                      <button onclick="moveMenuSection('${menu.id}','${section.id}',-1)" style="background:none;border:none;color:var(--charcoal);cursor:pointer;font-size:.6rem;padding:0;line-height:1" title="Monter">▲</button>
-                      <button onclick="moveMenuSection('${menu.id}','${section.id}',1)" style="background:none;border:none;color:var(--charcoal);cursor:pointer;font-size:.6rem;padding:0;line-height:1" title="Descendre">▼</button>
-                    </div>
-                    <input type="text" value="${section.name}" onchange="renameMenuSection('${menu.id}','${section.id}',this.value)"
-                      style="flex:1;background:transparent;border:none;font-family:var(--font-display);font-size:.85rem;font-weight:400;color:var(--charcoal);outline:none;min-width:0;text-align:center"
-                      placeholder="Rubrique...">
-                    <button onclick="addMenuItem('${menu.id}','${section.id}')"
-                      style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:.72rem;font-family:var(--font-body);white-space:nowrap;padding:0;flex-shrink:0">+ Plat</button>
-                    ${(menu.sections||[]).length > 1 ? `<button onclick="deleteMenuSection('${menu.id}','${section.id}')"
-                      style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0 .1rem;flex-shrink:0">×</button>` : ''}
-                  </div>
-                  <!-- Items -->
-                  ${section.items.length === 0
-                    ? '<div style="padding:.3rem .8rem;font-size:.72rem;color:var(--muted);font-style:italic">Vide — cliquez sur + Plat</div>'
-                    : section.items.map((item, ii) => `
-                      <div style="display:flex;flex-direction:column;align-items:center;gap:.15rem;padding:.4rem .8rem;border-bottom:1px solid rgba(44,37,32,.05);text-align:center"
-                        onmouseover="this.style.background='var(--ivory)'" onmouseout="this.style.background=''">
-                        <input type="text" value="${item.name}" oninput="updateMenuItem('${menu.id}','${section.id}',${ii},'name',this.value)"
-                          style="border:none;border-bottom:1px solid transparent;font-size:.78rem;font-weight:500;color:var(--charcoal);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);min-width:0;text-align:center;width:100%"
-                          onfocus="this.style.borderBottomColor='var(--gold)'" onblur="this.style.borderBottomColor='transparent'"
-                          placeholder="Nom du plat">
-                        <input type="text" value="${item.desc||''}" oninput="updateMenuItem('${menu.id}','${section.id}',${ii},'desc',this.value)"
-                          style="border:none;border-bottom:1px solid transparent;font-size:.72rem;color:var(--muted);background:transparent;outline:none;padding:.05rem 0;font-family:var(--font-body);min-width:0;text-align:center;width:100%"
-                          onfocus="this.style.borderBottomColor='var(--gold)'" onblur="this.style.borderBottomColor='transparent'"
-                          placeholder="Description...">
-                        <div style="display:flex;align-items:center;gap:.6rem;justify-content:center">
-                          <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--sage);cursor:pointer;white-space:nowrap">
-                            <input type="checkbox" ${item.vege?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'vege',this.checked)" style="accent-color:var(--sage);width:11px;height:11px"> Végé
-                          </label>
-                          <label style="display:flex;align-items:center;gap:.2rem;font-size:.65rem;color:var(--gold);cursor:pointer;white-space:nowrap">
-                            <input type="checkbox" ${item.halal?'checked':''} onchange="updateMenuItem('${menu.id}','${section.id}',${ii},'halal',this.checked)" style="accent-color:var(--gold);width:11px;height:11px"> Halal
-                          </label>
-                          <button onclick="deleteMenuItem('${menu.id}','${section.id}',${ii})"
-                            style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:0;line-height:1">×</button>
-                        </div>
-                      </div>
-                    `).join('')}
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        `).join('')}
+        ${state.menus.slice(0,6).map(menu => buildMenuCard(menu)).join('')}
         ${state.menus.length < 6 ? `
           <div onclick="addNewMenu()" style="
-            border:2px dashed var(--border-hover);
-            border-radius:var(--radius-lg);
+            border:2px dashed var(--border-hover);border-radius:var(--radius-lg);
             display:flex;flex-direction:column;align-items:center;justify-content:center;
-            cursor:pointer;color:var(--muted);gap:.5rem;
-            transition:all .2s;min-height:0;
-          " onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--border-hover)';this.style.color='var(--muted)'">
+            cursor:pointer;color:var(--muted);gap:.5rem;transition:all .2s;min-height:0;
+          " onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+             onmouseout="this.style.borderColor='var(--border-hover)';this.style.color='var(--muted)'">
             <div style="font-size:1.6rem;opacity:.4">+</div>
             <div style="font-size:.78rem;font-weight:400">Nouvelle carte</div>
           </div>
@@ -1546,6 +1558,17 @@ function renderMenu() {
       </div>
     </div>
   `;
+}
+
+
+function renameMenu(menuId, name) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (m) { m.name = name; save(); }
+}
+
+function setMenuLang(menuId, lang) {
+  const m = state.menus.find(m => m.id === menuId);
+  if (m) { m.lang = lang.toUpperCase(); save(); }
 }
 
 function addNewMenu() {
@@ -1564,29 +1587,38 @@ function deleteMenu(menuId) {
   save(); renderMenu();
 }
 
-
-function renameMenu(menuId, name) {
-  const m = state.menus.find(m => m.id === menuId);
-  if (m) { m.name = name; save(); }
-}
-
-function setMenuLang(menuId, lang) {
-  const m = state.menus.find(m => m.id === menuId);
-  if (m) { m.lang = lang.toUpperCase(); save(); }
+function duplicateMenu(menuId) {
+  if (state.menus.length >= 6) { toast('Maximum 6 cartes.'); return; }
+  const src = state.menus.find(m => m.id === menuId);
+  if (!src) return;
+  const copy = {
+    id: uid(),
+    name: src.name + ' (copie)',
+    lang: src.lang,
+    sections: src.sections.map(s => ({
+      id: uid(),
+      name: s.name,
+      items: s.items.map(i => ({ ...i })),
+    })),
+  };
+  const idx = state.menus.findIndex(m => m.id === menuId);
+  state.menus.splice(idx + 1, 0, copy);
+  save(); renderMenu();
+  toast('Carte dupliquée !');
 }
 
 function addMenuSection(menuId) {
   const m = state.menus.find(m => m.id === menuId);
   if (!m) return;
   m.sections.push({ id: uid(), name: 'Nouvelle rubrique', items: [] });
-  save(); renderMenu();
+  save(); refreshMenuCard(menuId);
 }
 
 function deleteMenuSection(menuId, sectionId) {
   const m = state.menus.find(m => m.id === menuId);
   if (!m) return;
   m.sections = m.sections.filter(s => s.id !== sectionId);
-  save(); renderMenu();
+  save(); refreshMenuCard(menuId);
 }
 
 function renameMenuSection(menuId, sectionId, name) {
@@ -1605,7 +1637,7 @@ function moveMenuSection(menuId, sectionId, dir) {
   const tmp = m.sections[idx];
   m.sections[idx] = m.sections[newIdx];
   m.sections[newIdx] = tmp;
-  save(); renderMenu();
+  save(); refreshMenuCard(menuId);
 }
 
 function addMenuItem(menuId, sectionId) {
@@ -1614,7 +1646,7 @@ function addMenuItem(menuId, sectionId) {
   const s = m.sections.find(s => s.id === sectionId);
   if (!s) return;
   s.items.push({ name: '', desc: '', vege: false, halal: false });
-  save(); renderMenu();
+  save(); refreshMenuCard(menuId);
 }
 
 function updateMenuItem(menuId, sectionId, idx, field, value) {
@@ -1632,7 +1664,7 @@ function deleteMenuItem(menuId, sectionId, idx) {
   const s = m.sections.find(s => s.id === sectionId);
   if (!s) return;
   s.items.splice(idx, 1);
-  save(); renderMenu();
+  save(); refreshMenuCard(menuId);
 }
 
 // ─── CHECKLIST ─────────────────────────────────
